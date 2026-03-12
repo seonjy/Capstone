@@ -1,146 +1,96 @@
-from app.services.analyzer import analyze_image
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, File, UploadFile
+from dotenv import load_dotenv
+import pymysql
+import cv2
+import numpy as np
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from PIL import Image
+import io
+import os
 
-# DB 관련 함수/상수 import
-from app.db_sqlite import (
-    init_db,
-    insert_camera_log,
-    get_conn,
-    DB_PATH,
-)
+load_dotenv()
 
 app = FastAPI()
 
-# ===============================
-# CORS 설정 (앱/외부 노트북 접근 허용)
-# ===============================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+SCENE_LABELS = ['contrast', 'food', 'landscape', 'night', 'portrait']
 
-# ===============================
-# 서버 시작 시 DB 초기화
-# ===============================
-@app.on_event("startup")
-def on_startup():
-    init_db()
+def load_model():
+    model = models.resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, len(SCENE_LABELS))
+    model.load_state_dict(torch.load('scene_model.pth', map_location='cpu'))
+    model.eval()
+    return model
 
-# ===============================
-# 서버 상태 확인용 (Health Check)
-# ===============================
-@app.get("/")
-def health():
-    return {"ok": True, "message": "server alive"}
+model = load_model()
 
-# ===============================
-# camera.db 내용 확인용 API
-# expert_scene_stats 테이블 전체 조회
-# ===============================
-@app.get("/camera-db")
-def get_camera_db_contents():
-    conn = get_conn()
-    try:
-        rows = conn.execute("SELECT * FROM expert_scene_stats").fetchall()
-        return {
-            "database_path": str(DB_PATH),
-            "database_name": "camera.db",
-            "table_name": "expert_scene_stats",
-            "count": len(rows),
-            "data": [dict(row) for row in rows],
-        }
-    finally:
-        conn.close()
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
+])
 
-# ===============================
-# scene별 추천값 조회 함수
-# expert_scene_stats 에서 iso_mean, shutter_mean 사용
-# ===============================
-def get_recommendation_by_scene(scene: str):
-    conn = get_conn()
-    try:
-        row = conn.execute(
-            """
-            SELECT scene, iso_mean, shutter_mean
-            FROM expert_scene_stats
-            WHERE scene = ?
-            """,
-            (scene,),
-        ).fetchone()
-
-        if row is None:
-            return None
-
-        return {
-            "scene": row["scene"],
-            "recommended_iso": row["iso_mean"],
-            "recommended_shutter": row["shutter_mean"],
-        }
-    finally:
-        conn.close()
-
-# ===============================
-# 이미지 업로드 + 분석 + 추천값 조회 + 로그 저장
-# ===============================
-@app.post("/upload")
-async def upload_image(
-    user_id: str = Form(...),
-    file: UploadFile = File(...)
-):
-    # 이미지 읽기
-    image_bytes = await file.read()
-
-    if not image_bytes:
-        raise HTTPException(status_code=400, detail="빈 파일입니다.")
-
-    # OpenCV 분석
-    metrics = analyze_image(image_bytes)
-
-    # analyzer.py 에서 계산한 scene 사용
-    analyzed_scene = metrics.get("scene", "normal")
-
-    # expert_scene_stats 테이블에 맞게 scene 매핑
-    # 현재 DB에는 low_light / normal 이 없으므로 임시 매핑
-    if analyzed_scene == "low_light":
-        db_scene = "night"
-    elif analyzed_scene == "high_contrast":
-        db_scene = "contrast"
-    else:
-        db_scene = "landscape"
-
-    # 추천값 조회
-    recommendation = get_recommendation_by_scene(db_scene)
-
-    if recommendation is None:
-        rec_iso = None
-        rec_shutter = None
-    else:
-        rec_iso = recommendation["recommended_iso"]
-        rec_shutter = recommendation["recommended_shutter"]
-
-    # 로그 저장
-    log_id = insert_camera_log(
-        user_id=user_id,
-        scene_type=analyzed_scene,
-        rec_iso=rec_iso,
-        rec_shutter=rec_shutter,
+def get_db():
+    return pymysql.connect(
+        host=os.getenv('DB_HOST'),
+        port=int(os.getenv('DB_PORT')),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        db=os.getenv('DB_NAME'),
+        charset='utf8mb4'
     )
 
-    # 응답 반환
+def analyze_brightness(image_bytes):
+    np_arr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    brightness = hsv[:, :, 2].mean()
+    if brightness < 85:
+        return "dark"
+    elif brightness < 170:
+        return "normal"
+    else:
+        return "bright"
+
+def analyze_scene(image_bytes):
+    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+    tensor = transform(img).unsqueeze(0)
+    with torch.no_grad():
+        output = model(tensor)
+    predicted = torch.argmax(output, dim=1).item()
+    return SCENE_LABELS[predicted]
+
+@app.get("/")
+def root():
+    return {"message": "서버 정상 작동중"}
+
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    brightness = analyze_brightness(image_bytes)
+    scene = analyze_scene(image_bytes)
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+        "SELECT iso, shutter FROM Expert_Setting_Statistics WHERE scene=%s AND brightness=%s",
+        (scene, brightness)
+    )
+    setting = cursor.fetchone()
+    cursor.execute(
+        "SELECT message, tip FROM Guide_Text WHERE scene=%s AND brightness=%s",
+        (scene, brightness)
+    )
+    guide = cursor.fetchone()
+    db.close()
+
     return {
-        "ok": True,
-        "message": "uploaded, analyzed & recommended",
-        "log_id": log_id,
-        "filename": file.filename,
-        "scene_type": analyzed_scene,
-        "db_scene": db_scene,
-        "metrics": metrics,
-        "recommendation": {
-            "recommended_iso": rec_iso,
-            "recommended_shutter": rec_shutter,
-        },
+        "scene": scene,
+        "brightness": brightness,
+        "recommended_iso": setting[0] if setting else None,
+        "recommended_shutter": setting[1] if setting else None,
+        "message": guide[0] if guide else None,
+        "tip": guide[1] if guide else None
     }
