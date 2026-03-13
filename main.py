@@ -1,21 +1,30 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import pymysql
-import cv2
-import numpy as np
-import torch
-import torch.nn as nn
-from torchvision import models, transforms
-from PIL import Image
-import io
+import asyncio
 import os
 
-load_dotenv()
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.services.analyzer import analyze_image
+from app.services.classifier import classify_scene
+from app.db_mysql import (
+    test_db,
+    get_expert_setting,
+    get_guide_text,
+    save_user_history,
+)
 
 app = FastAPI()
 
-# CORS 설정
+# -------------------------------
+# adjusted.jpg 저장 위치와 동일한 폴더를 정적 폴더로 공개
+# app/main.py 기준 -> app/services
+# -------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGE_DIR = os.path.join(BASE_DIR, "services")
+
+app.mount("/images", StaticFiles(directory=IMAGE_DIR), name="images")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,66 +33,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 장면 분류 레이블
-SCENE_LABELS = ['contrast', 'food', 'landscape', 'night', 'portrait']
 
-# 학습된 모델 불러오기
-def load_model():
-    model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, len(SCENE_LABELS))
-    model.load_state_dict(torch.load('scene_model.pth', map_location='cpu'))
-    model.eval()
-    return model
-
-model = load_model()
-
-# 이미지 전처리
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
-
-# DB 연결
-def get_db():
-    return pymysql.connect(
-        host=os.getenv('DB_HOST'),
-        port=int(os.getenv('DB_PORT')),
-        user=os.getenv('DB_USER'),
-        password=os.getenv('DB_PASSWORD'),
-        db=os.getenv('DB_NAME'),
-        charset='utf8mb4'
-    )
-
-# Track A — 밝기 분석
-def analyze_brightness(image_bytes):
-    np_arr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    brightness = hsv[:, :, 2].mean()
-    if brightness < 85:
-        return "dark"
-    elif brightness < 170:
-        return "normal"
-    else:
-        return "bright"
-
-# Track B — 장면 분류
-def analyze_scene(image_bytes):
-    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-    tensor = transform(img).unsqueeze(0)
-    with torch.no_grad():
-        output = model(tensor)
-    predicted = torch.argmax(output, dim=1).item()
-    return SCENE_LABELS[predicted]
-
-# 서버 상태 확인
 @app.get("/")
 def health():
     return {"ok": True, "message": "server alive"}
 
-# 이미지 업로드 + 분석 + DB 조회
+
+@app.get("/db-test")
+def db_test():
+    return test_db()
+
+
+def get_brightness_level(brightness: float) -> str:
+    if brightness < 80:
+        return "dark"
+    elif brightness > 170:
+        return "bright"
+    return "normal"
+
+
 @app.post("/upload")
 async def upload_image(
     user_id: str = Form(...),
@@ -94,31 +62,80 @@ async def upload_image(
     if not image_bytes:
         raise HTTPException(status_code=400, detail="빈 파일입니다.")
 
-    brightness = analyze_brightness(image_bytes)
-    scene = analyze_scene(image_bytes)
+    try:
+        # Track A, Track B 병렬 실행
+        metrics, scene_result = await asyncio.gather(
+            asyncio.to_thread(analyze_image, image_bytes),
+            asyncio.to_thread(classify_scene, image_bytes),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"이미지 분석 중 오류가 발생했습니다: {str(e)}")
 
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute(
-        "SELECT iso, shutter FROM Expert_Setting_Statistics WHERE scene=%s AND brightness=%s",
-        (scene, brightness)
-    )
-    setting = cursor.fetchone()
-    cursor.execute(
-        "SELECT message, tip FROM Guide_Text WHERE scene=%s AND brightness=%s",
-        (scene, brightness)
-    )
-    guide = cursor.fetchone()
-    db.close()
+    brightness = float(metrics.get("brightness", 0.0))
+    contrast = float(metrics.get("contrast", 0.0))
+    brightness_level = get_brightness_level(brightness)
+
+    scene = scene_result["scene"]
+
+    try:
+        setting_row = get_expert_setting(scene, brightness_level)
+        guide_row = get_guide_text(scene, brightness_level)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"추천값 조회 중 오류가 발생했습니다: {str(e)}")
+
+    recommended_iso = None
+    recommended_shutter = None
+    message = None
+    tip = None
+
+    if setting_row:
+        recommended_iso = setting_row.get("iso")
+        recommended_shutter = setting_row.get("shutter")
+
+    if guide_row:
+        message = guide_row.get("message")
+        tip = guide_row.get("tip")
+
+    try:
+        log_id = save_user_history(
+            scene=scene,
+            brightness=brightness_level,
+            input_iso=None,
+            input_shutter=None,
+            recommended_iso=recommended_iso,
+            recommended_shutter=recommended_shutter,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"로그 저장 중 오류가 발생했습니다: {str(e)}")
+
+    adjusted_filename = metrics.get("adjusted_image", "adjusted.jpg")
+    adjusted_image_url = f"/images/{adjusted_filename}"
 
     return {
         "ok": True,
+        "message": "image uploaded and analyzed",
         "user_id": user_id,
+        "log_id": log_id,
         "filename": file.filename,
-        "scene": scene,
-        "brightness": brightness,
-        "recommended_iso": setting[0] if setting else None,
-        "recommended_shutter": setting[1] if setting else None,
-        "message": guide[0] if guide else None,
-        "tip": guide[1] if guide else None
+        "track_a": {
+            "brightness": brightness,
+            "contrast": contrast,
+            "brightness_level": brightness_level,
+        },
+        "track_b": scene_result,
+        "recommendation": {
+            "scene": scene,
+            "recommended_iso": recommended_iso,
+            "recommended_shutter": recommended_shutter,
+        },
+        "guide": {
+            "message": message,
+            "tip": tip,
+        },
+        "adjusted_image_info": {
+            "saved_as": adjusted_filename,
+            "url": adjusted_image_url
+        }
     }
