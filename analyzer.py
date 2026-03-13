@@ -31,5 +31,5 @@ def analyze_image(image_bytes: bytes) -> dict:
     return {
         "brightness": brightness,
         "contrast": contrast
-        "adjusted_image": "adjusted.jpg"
+        "adjusted_image": "/images/adjusted.jpg"
     }
