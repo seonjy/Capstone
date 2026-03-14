@@ -67,7 +67,7 @@ async def upload_image(
         metrics, scene_result = await asyncio.gather(
             asyncio.to_thread(analyze_image, image_bytes),
             asyncio.to_thread(classify_scene, image_bytes),
-        )
+      )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -139,3 +139,4 @@ async def upload_image(
             "url": adjusted_image_url
         }
     }
+
