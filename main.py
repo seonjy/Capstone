@@ -78,6 +78,10 @@ async def upload_image(
     brightness_level = get_brightness_level(brightness)
 
     scene = scene_result["scene"]
+    print("===== AI 분석 결과 =====")
+    print("scene :", scene_result.get("scene"))
+    print("confidence :", scene_result.get("confidence"))
+    print("=======================")
 
     try:
         setting_row = get_expert_setting(scene, brightness_level)
@@ -87,12 +91,30 @@ async def upload_image(
 
     recommended_iso = None
     recommended_shutter = None
+    recommended_aperture = None
+    recommended_focal_length = None
+    recommended_ev = None
+    recommended_white_balance = None
+
     message = None
     tip = None
 
     if setting_row:
         recommended_iso = setting_row.get("iso")
         recommended_shutter = setting_row.get("shutter")
+        recommended_aperture = setting_row.get("aperture")
+        recommended_focal_length = setting_row.get("focal_length")
+        recommended_ev = setting_row.get("ev")
+        recommended_white_balance = setting_row.get("white_balance")
+
+    print("===== 추천 카메라 설정값 =====")
+    print("ISO :", recommended_iso)
+    print("셔터속도 :", recommended_shutter)
+    print("조리개 :", recommended_aperture)
+    print("화이트밸런스 :", recommended_white_balance)
+    print("노출값(EV) :", recommended_ev)
+    print("초점거리 :", recommended_focal_length)
+    print("============================")
 
     if guide_row:
         message = guide_row.get("message")
@@ -126,9 +148,13 @@ async def upload_image(
         },
         "track_b": scene_result,
         "recommendation": {
-            "scene": scene,
-            "recommended_iso": recommended_iso,
-            "recommended_shutter": recommended_shutter,
+        "scene": scene,
+        "recommended_iso": recommended_iso,
+        "recommended_shutter": recommended_shutter,
+        "recommended_aperture": recommended_aperture,
+        "recommended_focal_length": recommended_focal_length,
+        "recommended_ev": recommended_ev,
+        "recommended_white_balance": recommended_white_balance,
         },
         "guide": {
             "message": message,
