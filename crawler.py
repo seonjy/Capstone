@@ -3,6 +3,7 @@ import time
 import requests
 import pandas as pd
 from io import BytesIO
+from fractions import Fraction
 from PIL import Image
 import imagehash
 from openpyxl import load_workbook
@@ -11,116 +12,145 @@ from openpyxl.styles import Alignment
 API_KEY = "a085ca875a968a2a3296d7b1bf729808"
 
 BASE_DIR = "photo_data"
-TARGET_COUNT = 1000
+
+TARGET_COUNT = 6000
 PER_PAGE = 100
-MAX_PAGES_PER_QUERY = 30
-NO_PROGRESS_LIMIT = 5
+MAX_PAGES_PER_QUERY = 50
+NO_PROGRESS_LIMIT = 6
 REQUEST_TIMEOUT = 20
 
+# 중복/품질 설정
 PHASH_DUP_THRESHOLD = 5
+MAX_IMAGES_PER_OWNER = 30
+MIN_WIDTH = 500
+MIN_HEIGHT = 500
+MIN_COLOR_COUNT = 50
 
 os.makedirs(BASE_DIR, exist_ok=True)
 
+# =========================================================
+# 카테고리별 검색어/키워드
+# =========================================================
 CATEGORY_CONFIG = {
     "food": {
         "queries": [
-            "food photography",
-            "dish food",
-            "meal photography",
-            "dessert photography",
-            "restaurant food",
-            "close up food"
+            "korean food photography", "japanese food photography", "chinese food photography",
+            "italian food photography", "western food dish", "street food photography",
+            "restaurant food plating", "fine dining food", "home cooked meal",
+            "breakfast food photography", "lunch meal photography", "dinner dish photography",
+            "dessert photography", "cake dessert photography", "bakery bread photography",
+            "pasta dish photography", "pizza food photography", "burger food photography",
+            "seafood dish photography", "vegetarian food photography", "salad food photography",
+            "noodle dish photography", "soup food photography", "rice bowl food photography"
         ],
         "positive_keywords": [
-            "food", "dish", "meal", "dessert", "cake", "bread", "pasta",
-            "pizza", "burger", "coffee", "drink", "restaurant", "lunch",
-            "dinner", "brunch"
+            "food", "dish", "meal", "dessert", "cake", "bread", "bakery",
+            "pasta", "pizza", "burger", "seafood", "salad", "soup",
+            "noodle", "rice", "breakfast", "lunch", "dinner", "restaurant",
+            "plating", "cuisine", "korean", "japanese", "chinese", "italian",
+            "streetfood", "vegetarian"
         ],
         "negative_keywords": [
             "landscape", "mountain", "sky", "forest", "portrait", "selfie",
-            "wedding", "car", "street", "building"
+            "wedding", "car", "street scene", "building", "menu", "kitchen",
+            "market", "sign", "logo", "single egg", "raw egg",
+            "ingredient", "grocery", "package", "packaging"
         ]
     },
 
     "landscape": {
         "queries": [
-            "mountain scenery",
-            "sea landscape",
-            "ocean view",
-            "sky landscape",
-            "forest landscape",
-            "lake landscape",
-            "natural scenery",
-            "sunset landscape"
+            "mountain landscape photography", "sea landscape photography", "ocean view landscape",
+            "sky landscape photography", "forest landscape photography", "lake landscape photography",
+            "river landscape photography", "waterfall landscape photography", "valley landscape photography",
+            "desert landscape photography", "snow mountain landscape", "sunset landscape photography",
+            "sunrise landscape photography", "beach landscape photography", "field landscape photography",
+            "countryside landscape", "natural scenery photography", "cliff landscape photography",
+            "island landscape photography", "autumn landscape photography", "winter landscape photography"
         ],
         "positive_keywords": [
             "landscape", "scenery", "mountain", "sea", "ocean", "sky",
-            "forest", "lake", "nature", "sunset", "river", "valley",
-            "waterfall", "beach"
+            "forest", "lake", "river", "waterfall", "valley", "desert",
+            "nature", "sunset", "sunrise", "beach", "field", "countryside",
+            "cliff", "island", "snow", "autumn", "winter"
         ],
         "negative_keywords": [
             "portrait", "selfie", "food", "dish", "meal", "wedding",
-            "car", "motorcycle", "building interior", "menu", "product"
+            "car", "motorcycle", "building interior", "menu", "product",
+            "indoor", "room", "restaurant", "person closeup", "face",
+            "street portrait"
         ]
     },
 
     "night": {
         "queries": [
-            "night photography",
-            "city night",
-            "night street",
-            "nightscape",
-            "night city lights",
-            "low light photography"
+            "night city photography", "night street photography", "nightscape photography",
+            "city night lights", "low light photography", "neon night photography",
+            "night skyline photography", "night road photography", "night market photography",
+            "night bridge photography", "night architecture photography", "night urban photography",
+            "evening city photography", "long exposure night photography", "dark street photography",
+            "night traffic lights", "night harbor photography"
         ],
         "positive_keywords": [
             "night", "nightscape", "city", "lights", "street", "dark",
-            "low light", "midnight", "neon", "evening"
+            "low light", "midnight", "neon", "evening", "skyline",
+            "urban", "bridge", "traffic", "harbor", "long exposure"
         ],
         "negative_keywords": [
             "food", "dish", "meal", "portrait studio", "daylight",
-            "sunny", "mountain day", "beach day"
+            "sunny", "morning", "afternoon", "beach day", "wedding",
+            "product", "menu", "indoor food"
         ]
     },
 
     "portrait": {
         "queries": [
-            "portrait photography",
-            "face portrait",
-            "person portrait",
-            "outdoor portrait",
-            "close up portrait",
-            "human portrait"
+            "portrait photography", "face portrait photography", "person portrait photography",
+            "outdoor portrait photography", "close up portrait photography", "natural light portrait",
+            "studio portrait photography", "female portrait photography", "male portrait photography",
+            "child portrait photography", "fashion portrait photography", "street portrait photography",
+            "black and white portrait", "environmental portrait", "headshot photography",
+            "model portrait photography", "candid portrait photography"
         ],
         "positive_keywords": [
             "portrait", "face", "person", "people", "woman", "man",
-            "girl", "boy", "human", "model"
+            "girl", "boy", "human", "model", "headshot", "fashion",
+            "candid", "studio", "outdoor", "environmental"
         ],
         "negative_keywords": [
             "food", "dish", "meal", "landscape", "mountain", "ocean",
-            "forest", "building", "car"
+            "forest", "building", "car", "animal", "dog", "cat",
+            "statue", "doll", "painting", "poster"
         ]
     },
 
     "contrast": {
         "queries": [
-            "high contrast photography",
-            "dramatic lighting",
-            "light and shadow",
-            "shadow photography",
-            "contrast lighting",
-            "strong shadows"
+            "high contrast photography", "dramatic lighting photography",
+            "light and shadow photography", "shadow photography",
+            "contrast lighting photography", "strong shadows photography",
+            "silhouette photography", "black and white high contrast",
+            "moody light photography", "hard light photography",
+            "chiaroscuro photography", "low key photography",
+            "dramatic shadow portrait", "geometric shadow photography",
+            "sunlight shadow photography", "dark contrast photography"
         ],
         "positive_keywords": [
             "contrast", "dramatic", "shadow", "light", "lighting",
-            "silhouette", "high contrast", "moody"
+            "silhouette", "high contrast", "moody", "hard light",
+            "chiaroscuro", "low key", "dark", "black and white",
+            "bw", "monochrome"
         ],
         "negative_keywords": [
-            "menu", "product", "food menu", "building plan"
+            "menu", "product", "food menu", "building plan", "screenshot",
+            "text", "poster", "graphic", "logo", "diagram"
         ]
     }
 }
 
+# =========================================================
+# Flickr API
+# =========================================================
 def flickr_call(method: str, params: dict):
     url = "https://www.flickr.com/services/rest/"
     base_params = {
@@ -181,6 +211,9 @@ def is_relevant_photo(photo: dict, positive_keywords: list, negative_keywords: l
     return False
 
 
+# =========================================================
+# EXIF 처리
+# =========================================================
 def get_exif(photo_id: str):
     try:
         data = flickr_call("flickr.photos.getExif", {"photo_id": photo_id})
@@ -256,22 +289,52 @@ def extract_required_fields(exif_map: dict):
     }
 
 
-def count_valid_fields(extracted: dict):
-    return sum(1 for v in extracted.values() if str(v).strip() != "")
-
-
+# =========================================================
+# 이미지 품질 / 밝기 / 중복
+# =========================================================
 def download_image_bytes(url: str):
     response = requests.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     return response.content
 
 
-def get_image_phash(image_bytes: bytes):
+def check_image_quality(image_bytes: bytes):
     try:
         img = Image.open(BytesIO(image_bytes)).convert("RGB")
-        return imagehash.phash(img)
+
+        if img.width < MIN_WIDTH or img.height < MIN_HEIGHT:
+            return False, None
+
+        colors = img.resize((128, 128)).getcolors(maxcolors=1000000)
+        if colors is None or len(colors) < MIN_COLOR_COUNT:
+            return False, None
+
+        phash = imagehash.phash(img)
+        return True, phash
+
     except Exception:
-        return None
+        return False, None
+
+
+def get_brightness_info(image_bytes: bytes):
+    try:
+        img = Image.open(BytesIO(image_bytes)).convert("L")
+        resized = img.resize((128, 128))
+        pixels = list(resized.getdata())
+
+        brightness_mean = sum(pixels) / len(pixels)
+
+        if brightness_mean < 85:
+            brightness_label = "dark"
+        elif brightness_mean > 170:
+            brightness_label = "bright"
+        else:
+            brightness_label = "normal"
+
+        return brightness_label, round(brightness_mean, 2)
+
+    except Exception:
+        return "", ""
 
 
 def is_similar_duplicate(new_hash, existing_hashes, threshold=PHASH_DUP_THRESHOLD):
@@ -283,13 +346,55 @@ def is_similar_duplicate(new_hash, existing_hashes, threshold=PHASH_DUP_THRESHOL
             continue
         if abs(new_hash - old_hash) <= threshold:
             return True
+
     return False
 
 
-def save_excel(records: list, excel_path: str):
-    df = pd.DataFrame(records)
-    df.to_excel(excel_path, index=False)
+# =========================================================
+# 셔터스피드 변환
+# =========================================================
+def shutter_to_seconds(shutter_value):
+    try:
+        value = str(shutter_value).strip()
 
+        if value == "":
+            return None
+
+        # 예: "1/60"
+        if "/" in value:
+            return float(Fraction(value))
+
+        # 예: "0.0167"
+        return float(value)
+
+    except Exception:
+        return None
+
+
+def seconds_to_shutter(seconds):
+    if seconds is None:
+        return ""
+
+    try:
+        seconds = float(seconds)
+
+        if seconds <= 0:
+            return ""
+
+        if seconds >= 1:
+            return f"{round(seconds, 2)}s"
+
+        denominator = round(1 / seconds)
+        return f"1/{denominator}"
+
+    except Exception:
+        return ""
+
+
+# =========================================================
+# 엑셀 저장
+# =========================================================
+def format_excel(excel_path: str):
     wb = load_workbook(excel_path)
     ws = wb.active
 
@@ -302,14 +407,81 @@ def save_excel(records: list, excel_path: str):
     for col in ws.columns:
         max_len = 0
         col_letter = col[0].column_letter
+
         for cell in col:
             value = "" if cell.value is None else str(cell.value)
             max_len = max(max_len, len(value))
-        ws.column_dimensions[col_letter].width = max(14, min(max_len + 2, 30))
+
+        ws.column_dimensions[col_letter].width = max(14, min(max_len + 2, 35))
 
     wb.save(excel_path)
 
 
+def save_raw_excel(records: list, excel_path: str):
+    df = pd.DataFrame(records)
+    df.to_excel(excel_path, index=False)
+    format_excel(excel_path)
+
+
+def save_db_ready_excel(records: list, excel_path: str):
+    if not records:
+        return
+
+    df = pd.DataFrame(records)
+
+    if df.empty:
+        return
+
+    # ISO 숫자화
+    df["ISO_숫자"] = pd.to_numeric(df["ISO"], errors="coerce")
+
+    # 셔터스피드 초 단위 숫자화
+    df["셔터스피드_초"] = df["셔터스피드"].apply(shutter_to_seconds)
+
+    # 추천값 산출에 필요한 값만 사용
+    df = df.dropna(subset=["ISO_숫자", "셔터스피드_초"])
+    df = df[df["brightness"].isin(["dark", "normal", "bright"])]
+
+    if df.empty:
+        return
+
+    summary = (
+        df.groupby(["category", "brightness"])
+        .agg(
+            recommended_iso=("ISO_숫자", "median"),
+            recommended_shutter_seconds=("셔터스피드_초", "median"),
+            sample_count=("name", "count")
+        )
+        .reset_index()
+    )
+
+    summary["recommended_iso"] = summary["recommended_iso"].round().astype(int)
+    summary["recommended_shutter"] = summary["recommended_shutter_seconds"].apply(seconds_to_shutter)
+
+    summary = summary[
+        [
+            "category",
+            "brightness",
+            "recommended_iso",
+            "recommended_shutter",
+            "recommended_shutter_seconds",
+            "sample_count"
+        ]
+    ]
+
+    summary.to_excel(excel_path, index=False)
+    format_excel(excel_path)
+
+
+def save_all_db_ready_excel(all_records: list):
+    excel_path = os.path.join(BASE_DIR, "all_categories_db_ready.xlsx")
+    save_db_ready_excel(all_records, excel_path)
+    print(f"전체 DB용 엑셀 저장 완료: {excel_path}")
+
+
+# =========================================================
+# 카테고리 하나 수집
+# =========================================================
 def collect_category(category_name: str):
     config = CATEGORY_CONFIG[category_name]
     category_dir = os.path.join(BASE_DIR, category_name)
@@ -318,26 +490,36 @@ def collect_category(category_name: str):
     records = []
     saved_photo_ids = set()
     saved_hashes = []
+    owner_count = {}
+
     current_count = 1
+
+    print(f"\n{'=' * 60}")
+    print(f"{category_name} 수집 시작")
+    print(f"{'=' * 60}")
 
     for query in config["queries"]:
         if current_count > TARGET_COUNT:
             break
 
+        print(f"\n검색어: {query}")
         no_progress_pages = 0
 
         for page in range(1, MAX_PAGES_PER_QUERY + 1):
             if current_count > TARGET_COUNT:
                 break
 
+            print(f"   - page {page} 검색 중...")
             before_count = current_count
 
             try:
                 photos = search_photos(query, page)
-            except Exception:
+            except Exception as e:
+                print(f"   ! 검색 실패: {e}")
                 break
 
             if not photos:
+                print("   ! 검색 결과 없음 -> 다음 검색어")
                 break
 
             for photo in photos:
@@ -345,7 +527,12 @@ def collect_category(category_name: str):
                     break
 
                 photo_id = str(photo.get("id", "")).strip()
+                owner_id = str(photo.get("owner", "")).strip()
+
                 if not photo_id or photo_id in saved_photo_ids:
+                    continue
+
+                if owner_id and owner_count.get(owner_id, 0) >= MAX_IMAGES_PER_OWNER:
                     continue
 
                 if not is_relevant_photo(
@@ -359,20 +546,32 @@ def collect_category(category_name: str):
                 if not img_url:
                     continue
 
+                # EXIF 검사
                 exif_map = get_exif(photo_id)
                 extracted = extract_required_fields(exif_map)
 
-                if count_valid_fields(extracted) < 3:
+                # 핵심 정답값: ISO + 셔터스피드는 반드시 있어야 함
+                if extracted["ISO"] == "" or extracted["셔터스피드"] == "":
                     continue
 
+                # 이미지 다운로드
                 try:
                     image_bytes = download_image_bytes(img_url)
                 except Exception:
                     continue
 
-                phash = get_image_phash(image_bytes)
-                if is_similar_duplicate(phash, saved_hashes):
+                # 이미지 품질 검사 + pHash 생성
+                is_good, phash = check_image_quality(image_bytes)
+                if not is_good:
                     continue
+
+                # 유사 이미지 제거
+                if is_similar_duplicate(phash, saved_hashes, PHASH_DUP_THRESHOLD):
+                    print("   ↪ 유사 이미지 스킵")
+                    continue
+
+                # 밝기 계산
+                brightness_label, brightness_mean = get_brightness_info(image_bytes)
 
                 file_name = f"{category_name}{current_count}.jpg"
                 file_path = os.path.join(category_dir, file_name)
@@ -384,40 +583,80 @@ def collect_category(category_name: str):
                     continue
 
                 record = {
+                    "id": f"{category_name}_{current_count}",
                     "name": file_name,
+                    "category": category_name,
+                    "subcategory": query,
+                    "brightness": brightness_label,
+                    "brightness_mean": brightness_mean,
                     "ISO": extracted["ISO"],
                     "셔터스피드": extracted["셔터스피드"],
+                    "셔터스피드_초": shutter_to_seconds(extracted["셔터스피드"]),
                     "초점거리": extracted["초점거리"],
                     "노출보정": extracted["노출보정"],
                     "화이트밸런스": extracted["화이트밸런스"],
+                    "photo_id": photo_id,
+                    "owner_id": owner_id,
+                    "source": "flickr",
+                    "image_path": file_path,
+                    "title": photo.get("title", ""),
+                    "tags": photo.get("tags", "")
                 }
 
                 records.append(record)
                 saved_photo_ids.add(photo_id)
                 saved_hashes.append(phash)
 
+                if owner_id:
+                    owner_count[owner_id] = owner_count.get(owner_id, 0) + 1
+
+                print(f"   ✅ {category_name} {current_count}장 완료")
                 current_count += 1
 
                 time.sleep(0.05)
 
             if current_count == before_count:
                 no_progress_pages += 1
+                print(f"   진행 없음 ({no_progress_pages}/{NO_PROGRESS_LIMIT})")
             else:
                 no_progress_pages = 0
-                excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
-                save_excel(records, excel_path)
+
+                raw_excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
+                db_excel_path = os.path.join(category_dir, f"{category_name}_db_ready.xlsx")
+
+                save_raw_excel(records, raw_excel_path)
+                save_db_ready_excel(records, db_excel_path)
 
             if no_progress_pages >= NO_PROGRESS_LIMIT:
+                print("   ➜ 이 검색어는 건너뜀")
                 break
 
-    excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
-    save_excel(records, excel_path)
+    raw_excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
+    db_excel_path = os.path.join(category_dir, f"{category_name}_db_ready.xlsx")
+
+    save_raw_excel(records, raw_excel_path)
+    save_db_ready_excel(records, db_excel_path)
+
+    print(f"\n{category_name} 완료: 총 {len(records)}장")
+    print(f"원본 엑셀: {raw_excel_path}")
+    print(f"DB용 엑셀: {db_excel_path}")
+
+    return records
 
 
 def collect_all_categories():
+    all_records = []
+
     for category_name in ["food", "landscape", "night", "portrait", "contrast"]:
-        collect_category(category_name)
+        records = collect_category(category_name)
+        all_records.extend(records)
+
+    save_all_db_ready_excel(all_records)
+
+    raw_all_path = os.path.join(BASE_DIR, "all_categories_raw.xlsx")
+    save_raw_excel(all_records, raw_all_path)
+    print(f"전체 원본 엑셀 저장 완료: {raw_all_path}")
 
 
 if __name__ == "__main__":
-    collect_all_categories()
+    collect_category("contrast")
