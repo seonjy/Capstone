@@ -95,13 +95,21 @@ async def upload_image(
     recommended_focal_length = None
     recommended_ev = None
     recommended_white_balance = None
-
+    recommended_iso_min = None
+    recommended_iso_max = None
+    recommended_shutter_min = None
+    recommended_shutter_max = None
     message = None
     tip = None
 
     if setting_row:
         recommended_iso = setting_row.get("iso")
+        recommended_iso_min = setting_row.get("iso_min")
+        recommended_iso_max = setting_row.get("iso_max")
+        
         recommended_shutter = setting_row.get("shutter")
+        recommended_shutter_min = setting_row.get("shutter_min")
+        recommended_shutter_max = setting_row.get("shutter_max")
         recommended_aperture = setting_row.get("aperture")
         recommended_focal_length = setting_row.get("focal_length")
         recommended_ev = setting_row.get("ev")
@@ -150,7 +158,12 @@ async def upload_image(
         "recommendation": {
         "scene": scene,
         "recommended_iso": recommended_iso,
+        "recommended_iso_min": recommended_iso_min,
+        "recommended_iso_max": recommended_iso_max,
+        
         "recommended_shutter": recommended_shutter,
+        "recommended_shutter_min": recommended_shutter_min,
+        "recommended_shutter_max": recommended_shutter_max,
         "recommended_aperture": recommended_aperture,
         "recommended_focal_length": recommended_focal_length,
         "recommended_ev": recommended_ev,
