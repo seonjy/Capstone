@@ -30,8 +30,18 @@ def get_expert_setting(scene: str, brightness: str) -> Optional[Dict]:
     try:
         with conn.cursor() as cursor:
             sql = """
-                SELECT iso, shutter
-                FROM Expert_Setting_Statistics
+                SELECT 
+                    iso,
+                    iso_min,
+                    iso_max,
+                    shutter,
+                    shutter_min,
+                    shutter_max,
+                    aperture,
+                    focal_length,
+                    ev,
+                    white_balance
+                FROM expert_setting_statistics
                 WHERE scene = %s AND brightness = %s
                 LIMIT 1
             """
@@ -46,8 +56,16 @@ def get_guide_text(scene: str, brightness: str) -> Optional[Dict]:
     try:
         with conn.cursor() as cursor:
             sql = """
-                SELECT message, tip
-                FROM Guide_Text
+                SELECT
+                    message,
+                    tip,
+                    guide_1_label,
+                    guide_1_text,
+                    guide_2_label,
+                    guide_2_text,
+                    guide_3_label,
+                    guide_3_text
+                FROM guide_text
                 WHERE scene = %s AND brightness = %s
                 LIMIT 1
             """
@@ -69,7 +87,7 @@ def save_user_history(
     try:
         with conn.cursor() as cursor:
             sql = """
-                INSERT INTO User_History_Log
+                INSERT INTO user_history_log
                 (
                     scene,
                     brightness,
