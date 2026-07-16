@@ -56,6 +56,8 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
+    implementation("androidx.compose.material:material-icons-extended")
+
     // CameraX 라이브러리 추가
     val cameraxVersion = "1.3.4"
     implementation("androidx.camera:camera-core:$cameraxVersion")
@@ -65,7 +67,7 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
-
+    implementation("com.google.android.gms:play-services-location:21.0.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
