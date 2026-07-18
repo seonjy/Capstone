@@ -12,6 +12,8 @@ import java.io.File
 @Composable
 internal fun AppNavigation(
     permissionGranted: Boolean,
+    locationPermissionGranted: Boolean,
+    shouldRequestLocationPermission: Boolean,
     currentScreen: AppScreen,
     historyItems: List<HistoryItem>,
     isUploading: Boolean,
@@ -22,6 +24,7 @@ internal fun AppNavigation(
     detectedScene: String?,
     recommendedSettings: RecommendedSettings,
     onRequestPermission: () -> Unit,
+    onRequestLocationPermission: () -> Unit,
     onCameraClick: () -> Unit,
     onGalleryClick: () -> Unit,
     onBackFromCamera: () -> Unit,
@@ -35,7 +38,10 @@ internal fun AppNavigation(
             AppScreen.MENU -> MainTabScreen(
                 onCameraClick = onCameraClick,
                 onGalleryClick = onGalleryClick,
-                historyItems = historyItems
+                historyItems = historyItems,
+                locationPermissionGranted = locationPermissionGranted,
+                shouldRequestLocationPermission = shouldRequestLocationPermission,
+                onRequestLocationPermission = onRequestLocationPermission
             )
 
             AppScreen.CAMERA -> CameraPreviewScreen(

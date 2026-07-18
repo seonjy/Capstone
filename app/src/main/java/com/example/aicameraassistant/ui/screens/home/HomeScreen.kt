@@ -1,5 +1,6 @@
 package com.example.aicameraassistant.ui.screens.home
 
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,46 +28,84 @@ import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.WeatherTip
 import com.example.aicameraassistant.data.model.WeatherType
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
 private const val WEATHER_API_KEY =  "8767d3ec1b1f549c8f473c665dd5b2f2"
 
+// 디버그 화면 테스트 시에만 WeatherType 값을 지정합니다.
+// null이면 실제 위치 기반 날씨를 사용하며, release 빌드에는 적용되지 않습니다.
+private val DEBUG_WEATHER_OVERRIDE: WeatherType? = null
+
 // 홈 화면 UI
 @Composable
 fun HomeScreen(
     historyItems: List<HistoryItem>,
+    locationPermissionGranted: Boolean,
+    shouldRequestLocationPermission: Boolean,
+    onRequestLocationPermission: () -> Unit,
     onCameraClick: () -> Unit,
     onViewAllClick: () -> Unit,
     onHistoryItemClick: (HistoryItem) -> Unit
 ) {
+    val context = LocalContext.current
+    val isDebugBuild = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
     var weatherType by remember {
-        mutableStateOf(WeatherType.SUNNY)
+        mutableStateOf(
+            if (isDebugBuild) DEBUG_WEATHER_OVERRIDE ?: WeatherType.SUNNY
+            else WeatherType.SUNNY
+        )
     }
     val weatherTip = getWeatherTip(weatherType)
 
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
+    LaunchedEffect(locationPermissionGranted, shouldRequestLocationPermission) {
+        if (!locationPermissionGranted) {
+            if (shouldRequestLocationPermission) {
+                onRequestLocationPermission()
+            }
+            return@LaunchedEffect
+        }
 
         val fusedLocationClient =
             LocationServices.getFusedLocationProviderClient(context)
 
         try {
 
+            fun fetchWeather(latitude: Double, longitude: Double) {
+                fetchCurrentWeatherType(
+                    latitude = latitude,
+                    longitude = longitude,
+                    apiKey = WEATHER_API_KEY
+                ) { result ->
+                    weatherType = if (isDebugBuild) {
+                        DEBUG_WEATHER_OVERRIDE ?: result
+                    } else {
+                        result
+                    }
+                }
+            }
+
             fusedLocationClient.lastLocation
-                .addOnSuccessListener { location ->
+                .addOnSuccessListener { lastLocation ->
+                    if (lastLocation != null) {
+                        fetchWeather(lastLocation.latitude, lastLocation.longitude)
+                    } else {
+                        val cancellationTokenSource = CancellationTokenSource()
 
-                    if (location != null) {
-
-                        fetchCurrentWeatherType(
-                            latitude = location.latitude,
-                            longitude = location.longitude,
-                            apiKey = WEATHER_API_KEY
-                        ) { result ->
-
-                            weatherType = result
+                        fusedLocationClient.getCurrentLocation(
+                            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                            cancellationTokenSource.token
+                        ).addOnSuccessListener { currentLocation ->
+                            if (currentLocation != null) {
+                                fetchWeather(
+                                    currentLocation.latitude,
+                                    currentLocation.longitude
+                                )
+                            }
                         }
                     }
                 }
