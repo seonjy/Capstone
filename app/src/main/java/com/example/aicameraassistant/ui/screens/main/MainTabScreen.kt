@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.aicameraassistant.ui.screens.home.HomeScreen
 import com.example.aicameraassistant.data.model.HistoryItem
+import com.example.aicameraassistant.ui.screens.history.HistoryDetailScreen
 import com.example.aicameraassistant.ui.screens.history.HistoryScreen
 
 sealed class BottomTab(
@@ -44,6 +45,9 @@ fun MainTabScreen(
 ) {
     var selectedTab by remember {
         mutableStateOf<BottomTab>(BottomTab.Home)
+    }
+    var selectedHomeHistoryItem by remember {
+        mutableStateOf<HistoryItem?>(null)
     }
 
     val tabs = listOf(
@@ -66,11 +70,9 @@ fun MainTabScreen(
                         selected = selectedTab == tab,
 
                         onClick = {
-
-                            selectedTab = tab
+                            selectedHomeHistoryItem = null
 
                             when (tab) {
-
                                 BottomTab.Camera -> {
                                     onCameraClick()
                                 }
@@ -79,7 +81,10 @@ fun MainTabScreen(
                                     onGalleryClick()
                                 }
 
-                                else -> Unit
+                                BottomTab.Home,
+                                BottomTab.History -> {
+                                    selectedTab = tab
+                                }
                             }
                         },
 
@@ -113,7 +118,14 @@ fun MainTabScreen(
                 .padding(innerPadding)
         ) {
 
-            when (selectedTab) {
+            val homeHistoryItem = selectedHomeHistoryItem
+
+            if (homeHistoryItem != null) {
+                HistoryDetailScreen(
+                    item = homeHistoryItem,
+                    onBack = { selectedHomeHistoryItem = null }
+                )
+            } else when (selectedTab) {
 
                 BottomTab.Home -> {
                     HomeScreen(
@@ -121,6 +133,9 @@ fun MainTabScreen(
                         onCameraClick = onCameraClick,
                         onViewAllClick = {
                             selectedTab = BottomTab.History
+                        },
+                        onHistoryItemClick = { item ->
+                            selectedHomeHistoryItem = item
                         }
                     )
                 }

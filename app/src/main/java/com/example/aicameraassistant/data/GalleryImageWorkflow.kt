@@ -40,7 +40,7 @@ internal fun processGalleryImage(
                     title = selectedFile.name,
                     date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date()),
                     time = SimpleDateFormat("HH:mm", Locale.KOREA).format(Date()),
-                    originalPhotoFile = selectedFile,
+                    originalPhotoFile = historyPhotoFile,
                     adjustedImageUrl = imageUrl,
                     guideText = responseText,
                     settings = settings,
@@ -55,6 +55,7 @@ internal fun processGalleryImage(
                 )
 
                 onSuccess(responseText, imageUrl, scene, settings, newItem)
+                selectedFile.delete()
             },
             onError = onError
         )
