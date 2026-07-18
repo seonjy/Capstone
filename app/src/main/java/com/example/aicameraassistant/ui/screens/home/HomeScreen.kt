@@ -1,6 +1,5 @@
 package com.example.aicameraassistant.ui.screens.home
 
-import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,7 +16,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,122 +25,19 @@ import com.example.aicameraassistant.R
 import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.WeatherTip
 import com.example.aicameraassistant.data.model.WeatherType
-import com.example.aicameraassistant.data.model.WeatherUiState
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 
-private const val WEATHER_API_KEY =  "8767d3ec1b1f549c8f473c665dd5b2f2"
-
-// 디버그 화면 테스트 시에만 상태를 지정합니다. null이면 실제 날씨를 사용합니다.
-// 예: WeatherUiState.Success(WeatherType.CLOUDY), WeatherUiState.Loading,
-// WeatherUiState.Error("날씨 테스트 오류")
-private val DEBUG_WEATHER_STATE_OVERRIDE: WeatherUiState? = null
+// 발표/시연용 날씨입니다. SUNNY, CLOUDY, RAIN, SNOW 중 하나로 변경할 수 있습니다.
+private val DEMO_WEATHER_TYPE = WeatherType.SUNNY
 
 // 홈 화면 UI
 @Composable
 fun HomeScreen(
     historyItems: List<HistoryItem>,
-    locationPermissionGranted: Boolean,
-    shouldRequestLocationPermission: Boolean,
-    onRequestLocationPermission: () -> Unit,
     onCameraClick: () -> Unit,
     onViewAllClick: () -> Unit,
     onHistoryItemClick: (HistoryItem) -> Unit
 ) {
-    val context = LocalContext.current
-    val isDebugBuild = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-
-    var weatherUiState by remember { mutableStateOf<WeatherUiState>(WeatherUiState.Loading) }
-    var weatherRetryKey by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(
-        locationPermissionGranted,
-        shouldRequestLocationPermission,
-        weatherRetryKey
-    ) {
-        if (isDebugBuild && DEBUG_WEATHER_STATE_OVERRIDE != null) {
-            weatherUiState = DEBUG_WEATHER_STATE_OVERRIDE
-            return@LaunchedEffect
-        }
-
-        if (!locationPermissionGranted) {
-            if (shouldRequestLocationPermission) {
-                weatherUiState = WeatherUiState.Loading
-                onRequestLocationPermission()
-            } else {
-                weatherUiState = WeatherUiState.Error(
-                    "현재 날씨를 확인하려면 위치 권한이 필요합니다."
-                )
-            }
-            return@LaunchedEffect
-        }
-
-        weatherUiState = WeatherUiState.Loading
-
-        val fusedLocationClient =
-            LocationServices.getFusedLocationProviderClient(context)
-
-        try {
-
-            fun fetchWeather(latitude: Double, longitude: Double) {
-                fetchCurrentWeatherType(
-                    latitude = latitude,
-                    longitude = longitude,
-                    apiKey = WEATHER_API_KEY
-                ) { result ->
-                    context.mainExecutor.execute {
-                        weatherUiState = result.fold(
-                            onSuccess = { WeatherUiState.Success(it) },
-                            onFailure = {
-                                WeatherUiState.Error(
-                                    it.message ?: "날씨 정보를 불러오지 못했습니다."
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
-            fun requestCurrentLocation() {
-                val cancellationTokenSource = CancellationTokenSource()
-
-                fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                    cancellationTokenSource.token
-                ).addOnSuccessListener { currentLocation ->
-                    if (currentLocation != null) {
-                        fetchWeather(currentLocation.latitude, currentLocation.longitude)
-                    } else {
-                        weatherUiState = WeatherUiState.Error(
-                            "현재 위치를 확인하지 못했습니다."
-                        )
-                    }
-                }.addOnFailureListener {
-                    weatherUiState = WeatherUiState.Error(
-                        "현재 위치를 확인하지 못했습니다."
-                    )
-                }
-            }
-
-            fusedLocationClient.lastLocation
-                .addOnSuccessListener { lastLocation ->
-                    if (lastLocation != null) {
-                        fetchWeather(lastLocation.latitude, lastLocation.longitude)
-                    } else {
-                        requestCurrentLocation()
-                    }
-                }.addOnFailureListener { requestCurrentLocation() }
-
-        } catch (e: SecurityException) {
-            weatherUiState = WeatherUiState.Error(
-                "위치 권한을 확인하지 못했습니다."
-            )
-        }
-    }
+    val weatherTip = getWeatherTip(DEMO_WEATHER_TYPE)
 
     Column(
         modifier = Modifier
@@ -406,55 +301,20 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    when (val state = weatherUiState) {
-                        WeatherUiState.Loading -> {
-                            Text(
-                                text = "현재 날씨를 확인하고 있습니다",
-                                color = Color.Black,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    Text(
+                        text = weatherTip.weatherText,
+                        color = Color.Black,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                        is WeatherUiState.Success -> {
-                            val weatherTip = getWeatherTip(state.weatherType)
+                    Spacer(modifier = Modifier.height(2.dp))
 
-                            Text(
-                                text = weatherTip.weatherText,
-                                color = Color.Black,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Spacer(modifier = Modifier.height(2.dp))
-
-                            Text(
-                                text = weatherTip.tipText,
-                                color = Color.Gray,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        is WeatherUiState.Error -> {
-                            Text(
-                                text = state.message,
-                                color = Color.Gray,
-                                fontSize = 12.sp
-                            )
-
-                            TextButton(
-                                onClick = {
-                                    weatherRetryKey++
-                                    if (!locationPermissionGranted) {
-                                        onRequestLocationPermission()
-                                    }
-                                },
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("다시 시도")
-                            }
-                        }
-                    }
+                    Text(
+                        text = weatherTip.tipText,
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
                 }
 
 //                Text(
@@ -515,60 +375,6 @@ private fun RecentHistoryImageFallback(text: String) {
             fontSize = 12.sp
         )
     }
-}
-
-fun mapWeatherCodeToType(code: Int, cloudiness: Int): WeatherType {
-    return when {
-        code in 200..599 -> WeatherType.RAIN
-        code in 600..699 -> WeatherType.SNOW
-        code == 800 -> WeatherType.SUNNY
-        code in 801..804 -> WeatherType.CLOUDY
-        cloudiness >= 60 -> WeatherType.CLOUDY
-        else -> WeatherType.SUNNY
-    }
-}
-
-fun fetchCurrentWeatherType(
-    latitude: Double,
-    longitude: Double,
-    apiKey: String,
-    onResult: (Result<WeatherType>) -> Unit
-) {
-    Thread {
-        try {
-            val url =
-                "https://api.openweathermap.org/data/2.5/weather?lat=$latitude&lon=$longitude&appid=$apiKey&units=metric"
-
-            val client = OkHttpClient()
-            val request = Request.Builder()
-                .url(url)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-
-                if (!response.isSuccessful) {
-                    onResult(Result.failure(Exception("날씨 서버 응답 오류 (${response.code})")))
-                    return@use
-                }
-
-                val json = JSONObject(body)
-
-                val weatherArray = json.getJSONArray("weather")
-                val weatherCode = weatherArray.getJSONObject(0).optInt("id", 800)
-
-                val cloudiness = json
-                    .optJSONObject("clouds")
-                    ?.optInt("all", 0) ?: 0
-
-                val weatherType = mapWeatherCodeToType(weatherCode, cloudiness)
-
-                onResult(Result.success(weatherType))
-            }
-        } catch (e: Exception) {
-            onResult(Result.failure(e))
-        }
-    }.start()
 }
 
 @Composable

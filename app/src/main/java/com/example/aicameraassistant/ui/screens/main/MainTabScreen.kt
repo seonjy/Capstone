@@ -41,10 +41,7 @@ sealed class BottomTab(
 fun MainTabScreen(
     onCameraClick: () -> Unit,
     onGalleryClick: () -> Unit,
-    historyItems: List<HistoryItem>,
-    locationPermissionGranted: Boolean,
-    shouldRequestLocationPermission: Boolean,
-    onRequestLocationPermission: () -> Unit
+    historyItems: List<HistoryItem>
 ) {
     var selectedTab by remember {
         mutableStateOf<BottomTab>(BottomTab.Home)
@@ -133,9 +130,6 @@ fun MainTabScreen(
                 BottomTab.Home -> {
                     HomeScreen(
                         historyItems = historyItems,
-                        locationPermissionGranted = locationPermissionGranted,
-                        shouldRequestLocationPermission = shouldRequestLocationPermission,
-                        onRequestLocationPermission = onRequestLocationPermission,
                         onCameraClick = onCameraClick,
                         onViewAllClick = {
                             selectedTab = BottomTab.History

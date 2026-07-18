@@ -93,7 +93,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.location.LocationServices
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
