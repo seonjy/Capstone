@@ -66,11 +66,7 @@ fun MainTabScreen(
                         selected = selectedTab == tab,
 
                         onClick = {
-
-                            selectedTab = tab
-
                             when (tab) {
-
                                 BottomTab.Camera -> {
                                     onCameraClick()
                                 }
@@ -79,7 +75,10 @@ fun MainTabScreen(
                                     onGalleryClick()
                                 }
 
-                                else -> Unit
+                                BottomTab.Home,
+                                BottomTab.History -> {
+                                    selectedTab = tab
+                                }
                             }
                         },
 

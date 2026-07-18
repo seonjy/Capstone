@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onSuccess = { responseText, imageUrl, scene, settings, newItem ->
                     isUploading = false
+                    capturedPhotoFile = newItem.originalPhotoFile
                     detectedScene = scene
                     recommendedSettings = settings
                     guideText = "Scene: $scene\n$responseText"
