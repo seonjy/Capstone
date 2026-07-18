@@ -21,7 +21,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.aicameraassistant.R
 import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.WeatherTip
@@ -38,7 +38,8 @@ private const val WEATHER_API_KEY =  "8767d3ec1b1f549c8f473c665dd5b2f2"
 fun HomeScreen(
     historyItems: List<HistoryItem>,
     onCameraClick: () -> Unit,
-    onViewAllClick: () -> Unit
+    onViewAllClick: () -> Unit,
+    onHistoryItemClick: (HistoryItem) -> Unit
 ) {
     var weatherType by remember {
         mutableStateOf(WeatherType.SUNNY)
@@ -245,30 +246,38 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        if (historyItems.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "최근 촬영 기록이 없습니다",
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+            }
+        } else {
+            val recentItems = historyItems.take(3)
 
-            historyItems.take(3).forEach { item ->
-
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .aspectRatio(1f),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF1F2937)
-                    ),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-
-                    if (item.originalPhotoFile != null) {
-
-                        AsyncImage(
-                            model = item.originalPhotoFile,
-                            contentDescription = item.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                repeat(3) { index ->
+                    if (index < recentItems.size) {
+                        RecentHistoryCard(
+                            item = recentItems[index],
+                            onClick = { onHistoryItemClick(recentItems[index]) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Spacer(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
                         )
                     }
                 }
@@ -354,6 +363,54 @@ fun HomeScreen(
         }
 
         Spacer(modifier = Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun RecentHistoryCard(
+    item: HistoryItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF1F2937)
+        ),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        val imageFile = item.originalPhotoFile
+
+        if (imageFile != null && imageFile.exists()) {
+            SubcomposeAsyncImage(
+                model = imageFile,
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                loading = { RecentHistoryImageFallback("불러오는 중") },
+                error = { RecentHistoryImageFallback("이미지 없음") }
+            )
+        } else {
+            RecentHistoryImageFallback("이미지 없음")
+        }
+    }
+}
+
+@Composable
+private fun RecentHistoryImageFallback(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1F2937)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 12.sp
+        )
     }
 }
 
