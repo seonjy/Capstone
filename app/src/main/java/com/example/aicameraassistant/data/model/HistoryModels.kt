@@ -3,11 +3,14 @@ package com.example.aicameraassistant.data.model
 import java.io.File
 
 data class HistoryItem(
+    val id: String,
+    val createdAt: Long,
     val category: String,
     val title: String,
     val date: String,
     val time: String,
     val originalPhotoFile: File?,
+    val adjustedPhotoFile: File?,
     val adjustedImageUrl: String?,
     val guideText: String,
     val settings: RecommendedSettings,
@@ -31,3 +34,16 @@ data class RecommendedSettings(
     val ev: String = "",
     val whiteBalance: String = ""
 )
+
+data class CapturedSettings(
+    val iso: String? = null,
+    val shutter: String? = null,
+    val aperture: String? = null,
+    val focalLength: String? = null,
+    val ev: String? = null,
+    val whiteBalance: String? = null
+) {
+    val hasAnyValue: Boolean
+        get() = listOf(iso, shutter, aperture, focalLength, ev, whiteBalance)
+            .any { !it.isNullOrBlank() }
+}

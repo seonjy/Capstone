@@ -1,15 +1,18 @@
 package com.example.aicameraassistant.ui.screens.home
 
-import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,147 +29,67 @@ import com.example.aicameraassistant.R
 import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.WeatherTip
 import com.example.aicameraassistant.data.model.WeatherType
-import com.example.aicameraassistant.data.model.WeatherUiState
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 
-private const val WEATHER_API_KEY =  "8767d3ec1b1f549c8f473c665dd5b2f2"
-
-// 디버그 화면 테스트 시에만 상태를 지정합니다. null이면 실제 날씨를 사용합니다.
-// 예: WeatherUiState.Success(WeatherType.CLOUDY), WeatherUiState.Loading,
-// WeatherUiState.Error("날씨 테스트 오류")
-private val DEBUG_WEATHER_STATE_OVERRIDE: WeatherUiState? = null
+// 발표/시연용 날씨입니다. SUNNY, CLOUDY, RAIN, SNOW 중 하나로 변경할 수 있습니다.
+private val DEMO_WEATHER_TYPE = WeatherType.SUNNY
+private val HomePrimary = Color(0xFF5B35FF)
+private val HomeBrandNavy = Color(0xFF1C1E53)
+private val HomeBackground = Color(0xFFF7F8FC)
+private val HomeTextPrimary = Color(0xFF1F2937)
+private val HomeTextSecondary = Color(0xFF6B7280)
 
 // 홈 화면 UI
 @Composable
 fun HomeScreen(
     historyItems: List<HistoryItem>,
-    locationPermissionGranted: Boolean,
-    shouldRequestLocationPermission: Boolean,
-    onRequestLocationPermission: () -> Unit,
     onCameraClick: () -> Unit,
+    onGalleryClick: () -> Unit,
     onViewAllClick: () -> Unit,
     onHistoryItemClick: (HistoryItem) -> Unit
 ) {
-    val context = LocalContext.current
-    val isDebugBuild = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    val weatherTip = getWeatherTip(DEMO_WEATHER_TYPE)
 
-    var weatherUiState by remember { mutableStateOf<WeatherUiState>(WeatherUiState.Loading) }
-    var weatherRetryKey by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(
-        locationPermissionGranted,
-        shouldRequestLocationPermission,
-        weatherRetryKey
-    ) {
-        if (isDebugBuild && DEBUG_WEATHER_STATE_OVERRIDE != null) {
-            weatherUiState = DEBUG_WEATHER_STATE_OVERRIDE
-            return@LaunchedEffect
-        }
-
-        if (!locationPermissionGranted) {
-            if (shouldRequestLocationPermission) {
-                weatherUiState = WeatherUiState.Loading
-                onRequestLocationPermission()
-            } else {
-                weatherUiState = WeatherUiState.Error(
-                    "현재 날씨를 확인하려면 위치 권한이 필요합니다."
-                )
-            }
-            return@LaunchedEffect
-        }
-
-        weatherUiState = WeatherUiState.Loading
-
-        val fusedLocationClient =
-            LocationServices.getFusedLocationProviderClient(context)
-
-        try {
-
-            fun fetchWeather(latitude: Double, longitude: Double) {
-                fetchCurrentWeatherType(
-                    latitude = latitude,
-                    longitude = longitude,
-                    apiKey = WEATHER_API_KEY
-                ) { result ->
-                    context.mainExecutor.execute {
-                        weatherUiState = result.fold(
-                            onSuccess = { WeatherUiState.Success(it) },
-                            onFailure = {
-                                WeatherUiState.Error(
-                                    it.message ?: "날씨 정보를 불러오지 못했습니다."
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
-            fun requestCurrentLocation() {
-                val cancellationTokenSource = CancellationTokenSource()
-
-                fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                    cancellationTokenSource.token
-                ).addOnSuccessListener { currentLocation ->
-                    if (currentLocation != null) {
-                        fetchWeather(currentLocation.latitude, currentLocation.longitude)
-                    } else {
-                        weatherUiState = WeatherUiState.Error(
-                            "현재 위치를 확인하지 못했습니다."
-                        )
-                    }
-                }.addOnFailureListener {
-                    weatherUiState = WeatherUiState.Error(
-                        "현재 위치를 확인하지 못했습니다."
-                    )
-                }
-            }
-
-            fusedLocationClient.lastLocation
-                .addOnSuccessListener { lastLocation ->
-                    if (lastLocation != null) {
-                        fetchWeather(lastLocation.latitude, lastLocation.longitude)
-                    } else {
-                        requestCurrentLocation()
-                    }
-                }.addOnFailureListener { requestCurrentLocation() }
-
-        } catch (e: SecurityException) {
-            weatherUiState = WeatherUiState.Error(
-                "위치 권한을 확인하지 못했습니다."
-            )
-        }
-    }
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFFFFFFF))
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp)
+            .background(HomeBackground)
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp)
+        ) {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        Text(
-            text = "Klick",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF061B31)
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.chalkak_logo),
+                contentDescription = "CHALKAK 앱 아이콘",
+                modifier = Modifier.size(28.dp),
+                contentScale = ContentScale.Fit
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Text(
+                text = "CHALKAK",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = HomeBrandNavy
+            )
+        }
 
         Spacer(modifier = Modifier.height(14.dp))
 
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF1C1E53)
+                containerColor = HomeBrandNavy
             ),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(20.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
 
@@ -176,112 +98,86 @@ fun HomeScreen(
             ) {
 
                 Text(
-                    text = "AI 카메라 어시스턴트",
+                    text = "장면을 분석해\n알맞은 촬영 설정을 추천합니다",
                     color = Color.White,
-                    fontSize = 12.sp
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "장면을 읽고,\n빛을 짚어드립니다.",
-                    color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = 23.sp,
+                    lineHeight = 30.sp,
                     fontWeight = FontWeight.Bold
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "5가지 장면을 자동으로 인식해 ISO·셔터·화이트밸런스를 추천합니다.",
+                    text = "음식·풍경·야경·명암·인물 지원",
                     color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 12.sp
+                    fontSize = 13.sp
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                Button(
-                    onClick = onCameraClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(color = 0xFF523AFB),
-                        contentColor = Color(0xFFFFFFFF)
-                    ),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "카메라 시작 ->",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        Text(
-            text = "지원 장면",
-            color = Color(0xFF000000),
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val supportScenes = listOf(
-            Triple("음식", R.drawable.food, Color(0xFFE91E63)),
-            Triple("풍경", R.drawable.landscape, Color(0xFF2ECC71)),
-            Triple("야경", R.drawable.night, Color(0xFF6C5CE7)),
-            Triple("명암", R.drawable.contrast, Color(0xFF000000)),
-            Triple("인물", R.drawable.portrait, Color(0xFFFF66CC))
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            supportScenes.forEach { scene ->
-                val title = scene.first
-                val imageRes = scene.second
-                val dotColor = scene.third
-
-                Box(
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .aspectRatio(0.72f)
-                        .clip(RoundedCornerShape(14.dp))
+                        .fillMaxWidth()
+                        .height(96.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Image(
-                        painter = painterResource(id = imageRes),
-                        contentDescription = title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-
-                    Box(
+                    Button(
+                        onClick = onCameraClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = HomePrimary,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(10.dp),
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.25f))
-                    )
+                            .weight(1.35f)
+                            .fillMaxHeight()
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp)
+                            )
 
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(5.dp)
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(dotColor)
-                    )
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = title,
-                        color = Color(0xFFFFFFFF),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                            Text(
+                                text = "카메라 →",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = onGalleryClick,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White
+                        ),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.8f)),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(10.dp),
                         modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(7.dp)
-                    )
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.PhotoLibrary,
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "갤러리 선택",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -296,14 +192,14 @@ fun HomeScreen(
 
             Text(
                 text = "최근 촬영",
-                color = Color.Black,
+                color = HomeTextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
 
             Text(
                 text = "전체보기",
-                color = Color(0xFF8B5CF6),
+                color = HomePrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable {
@@ -322,9 +218,10 @@ fun HomeScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "최근 촬영 기록이 없습니다",
-                    color = Color.Gray,
-                    fontSize = 14.sp
+                    text = "아직 분석한 사진이 없어요\n첫 사진을 촬영해보세요",
+                    color = HomeTextSecondary,
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp
                 )
             }
         } else {
@@ -354,119 +251,167 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFFF1F5F9)
-            )
-        ) {
+        SupportScenesSection()
 
-            Row(
+        Spacer(modifier = Modifier.height(132.dp))
+        }
+
+        FloatingWeatherTipCard(
+            weatherTip = weatherTip,
+            weatherType = DEMO_WEATHER_TYPE,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp)
+        )
+    }
+}
+
+@Composable
+private fun SupportScenesSection() {
+    Text(
+        text = "지원 장면",
+        color = HomeTextPrimary,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.SemiBold
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    val supportScenes = listOf(
+        "음식" to R.drawable.food,
+        "풍경" to R.drawable.landscape,
+        "야경" to R.drawable.night,
+        "명암" to R.drawable.contrast,
+        "인물" to R.drawable.portrait
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        supportScenes.forEach { (title, imageRes) ->
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .weight(1f)
+                    .aspectRatio(0.72f)
+                    .clip(RoundedCornerShape(16.dp))
             ) {
+                Image(
+                    painter = painterResource(id = imageRes),
+                    contentDescription = title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
 
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.25f))
+                )
+
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(7.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloatingWeatherTipCard(
+    weatherTip: WeatherTip,
+    weatherType: WeatherType,
+    modifier: Modifier = Modifier
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = modifier
+            .widthIn(max = 280.dp)
+            .clickable { isExpanded = !isExpanded },
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        if (isExpanded) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(
-                                    Color(0xFFFFD36E),
-                                    Color(0xFFFF7AD9)
-                                )
+                                listOf(Color(0xFFFFD36E), Color(0xFFFF7AD9))
                             )
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-
                     Text(
-                        text = "☀",
+                        text = weatherIcon(weatherType),
                         color = Color.White,
-                        fontSize = 22.sp
+                        fontSize = 21.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-
+                Column {
                     Text(
-                        text = "오늘의 촬영 팁",
-                        color = Color(0xFF7C3AED),
-                        fontSize = 12.sp,
+                        text = weatherTip.weatherText,
+                        color = HomeTextPrimary,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    when (val state = weatherUiState) {
-                        WeatherUiState.Loading -> {
-                            Text(
-                                text = "현재 날씨를 확인하고 있습니다",
-                                color = Color.Black,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        is WeatherUiState.Success -> {
-                            val weatherTip = getWeatherTip(state.weatherType)
-
-                            Text(
-                                text = weatherTip.weatherText,
-                                color = Color.Black,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Spacer(modifier = Modifier.height(2.dp))
-
-                            Text(
-                                text = weatherTip.tipText,
-                                color = Color.Gray,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        is WeatherUiState.Error -> {
-                            Text(
-                                text = state.message,
-                                color = Color.Gray,
-                                fontSize = 12.sp
-                            )
-
-                            TextButton(
-                                onClick = {
-                                    weatherRetryKey++
-                                    if (!locationPermissionGranted) {
-                                        onRequestLocationPermission()
-                                    }
-                                },
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("다시 시도")
-                            }
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = weatherTip.tipText,
+                        color = HomeTextSecondary,
+                        fontSize = 12.sp
+                    )
                 }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .width(82.dp)
+                    .padding(horizontal = 8.dp, vertical = 11.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lightbulb,
+                    contentDescription = "오늘의 촬영 팁 열기",
+                    tint = HomePrimary,
+                    modifier = Modifier.size(30.dp)
+                )
 
-//                Text(
-//                    text = "→",
-//                    color = Color.Gray,
-//                    fontSize = 20.sp
-//                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "오늘의 촬영 팁",
+                    color = HomeTextSecondary,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
             }
         }
-
-        Spacer(modifier = Modifier.height(40.dp))
     }
+}
+
+private fun weatherIcon(weatherType: WeatherType): String = when (weatherType) {
+    WeatherType.SUNNY -> "☀"
+    WeatherType.CLOUDY -> "☁"
+    WeatherType.RAIN -> "☂"
+    WeatherType.SNOW -> "❄"
 }
 
 @Composable
@@ -480,9 +425,9 @@ private fun RecentHistoryCard(
             .aspectRatio(1f)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1F2937)
+            containerColor = HomeBrandNavy
         ),
-        shape = RoundedCornerShape(14.dp)
+        shape = RoundedCornerShape(16.dp)
     ) {
         val imageFile = item.originalPhotoFile
 
@@ -506,7 +451,7 @@ private fun RecentHistoryImageFallback(text: String) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1F2937)),
+            .background(HomeBrandNavy),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -515,60 +460,6 @@ private fun RecentHistoryImageFallback(text: String) {
             fontSize = 12.sp
         )
     }
-}
-
-fun mapWeatherCodeToType(code: Int, cloudiness: Int): WeatherType {
-    return when {
-        code in 200..599 -> WeatherType.RAIN
-        code in 600..699 -> WeatherType.SNOW
-        code == 800 -> WeatherType.SUNNY
-        code in 801..804 -> WeatherType.CLOUDY
-        cloudiness >= 60 -> WeatherType.CLOUDY
-        else -> WeatherType.SUNNY
-    }
-}
-
-fun fetchCurrentWeatherType(
-    latitude: Double,
-    longitude: Double,
-    apiKey: String,
-    onResult: (Result<WeatherType>) -> Unit
-) {
-    Thread {
-        try {
-            val url =
-                "https://api.openweathermap.org/data/2.5/weather?lat=$latitude&lon=$longitude&appid=$apiKey&units=metric"
-
-            val client = OkHttpClient()
-            val request = Request.Builder()
-                .url(url)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-
-                if (!response.isSuccessful) {
-                    onResult(Result.failure(Exception("날씨 서버 응답 오류 (${response.code})")))
-                    return@use
-                }
-
-                val json = JSONObject(body)
-
-                val weatherArray = json.getJSONArray("weather")
-                val weatherCode = weatherArray.getJSONObject(0).optInt("id", 800)
-
-                val cloudiness = json
-                    .optJSONObject("clouds")
-                    ?.optInt("all", 0) ?: 0
-
-                val weatherType = mapWeatherCodeToType(weatherCode, cloudiness)
-
-                onResult(Result.success(weatherType))
-            }
-        } catch (e: Exception) {
-            onResult(Result.failure(e))
-        }
-    }.start()
 }
 
 @Composable
@@ -580,7 +471,7 @@ fun StatCard(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1F2937)
+            containerColor = HomeBrandNavy
         ),
         shape = RoundedCornerShape(20.dp)
     ) {
@@ -599,7 +490,7 @@ fun StatCard(
 
             Text(
                 text = title,
-                color = Color.Gray,
+                color = HomeTextSecondary,
                 fontSize = 13.sp
             )
         }

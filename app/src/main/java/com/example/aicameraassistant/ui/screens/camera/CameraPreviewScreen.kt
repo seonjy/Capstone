@@ -1,6 +1,8 @@
 @file:OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
 package com.example.aicameraassistant.ui.screens.camera
 
+import androidx.activity.compose.BackHandler
+
 import android.Manifest
 import android.R.attr.text
 import android.content.ContentValues
@@ -78,12 +80,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,7 +98,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.location.LocationServices
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
@@ -102,12 +106,12 @@ import android.os.Looper
 import java.io.ByteArrayOutputStream
 import okhttp3.RequestBody.Companion.toRequestBody
 import coil.compose.AsyncImage
-import com.example.aicameraassistant.data.local.copyImageToHistoryStorage
+import com.example.aicameraassistant.data.local.copyImageToHistoryStorage
+import com.example.aicameraassistant.data.local.downloadImageToHistoryStorage
 import com.example.aicameraassistant.data.local.getLatestGalleryImageUri
 import com.example.aicameraassistant.data.local.loadHistoryItems
 import com.example.aicameraassistant.data.local.saveHistoryItems
-import com.example.aicameraassistant.data.local.saveImageFromUrlToGallery
-import com.example.aicameraassistant.data.local.saveImageToGallery
+import com.example.aicameraassistant.data.local.saveImageToGallery
 import com.example.aicameraassistant.data.local.uriToFile
 import com.example.aicameraassistant.data.remote.uploadCapturedImage
 import com.example.aicameraassistant.data.remote.uploadPreviewFrame
@@ -128,7 +132,8 @@ import com.example.aicameraassistant.ui.screens.camera.ExposureInlineBar
 import com.example.aicameraassistant.ui.screens.camera.GuideOverlay
 import com.example.aicameraassistant.ui.screens.camera.SceneDetectPill
 import com.example.aicameraassistant.ui.screens.camera.WhiteBalanceInlineBar
-import com.example.aicameraassistant.ui.screens.camera.WhiteBalanceMode
+import com.example.aicameraassistant.ui.screens.camera.WhiteBalanceMode
+import com.example.aicameraassistant.ui.screens.camera.ZoomInlineBar
 import com.example.aicameraassistant.ui.screens.home.HomeScreen
 import com.example.aicameraassistant.ui.screens.history.HistoryScreen
 import com.example.aicameraassistant.ui.screens.main.MainTabScreen
@@ -140,7 +145,8 @@ import com.example.aicameraassistant.ui.util.sceneToKorean
 import java.io.FileInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
+import java.util.Locale
+import java.util.UUID
 import org.json.JSONArray
 import com.example.aicameraassistant.R
 
@@ -173,6 +179,7 @@ fun CameraPreviewScreen(
     var guideText by remember { mutableStateOf("") }
     var uploadError by remember { mutableStateOf("") }
     var capturedPhotoFile by remember { mutableStateOf<File?>(null) }
+    var adjustedPhotoFile by remember { mutableStateOf<File?>(null) }
     var adjustedImageUrl by remember { mutableStateOf<String?>(null) }
 
     var recommendedSettings by remember {
@@ -183,6 +190,8 @@ fun CameraPreviewScreen(
     var camera by remember { mutableStateOf<Camera?>(null) }
     var exposureIndex by remember { mutableStateOf(0f) }
     var exposureRange by remember { mutableStateOf(0..0) }
+    var zoomRatio by remember { mutableStateOf(1f) }
+    var zoomRange by remember { mutableStateOf(1f..2f) }
 
 
     var selectedSetting by remember { mutableStateOf<String?>(null) }
@@ -191,6 +200,16 @@ fun CameraPreviewScreen(
     var detectedConfidence by remember { mutableStateOf("--") }
     var lastSceneDetectTime by remember { mutableStateOf(0L) }
     var isSceneDetecting by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showResultScreen) {
+        showResultScreen = false
+        isUploading = false
+        guideText = ""
+        uploadError = ""
+        adjustedPhotoFile = null
+        adjustedImageUrl = null
+        detectedScene = "감지 중"
+    }
 
     // 카메라 프리뷰를 보여주는 View
     val previewView = remember {
@@ -259,6 +278,7 @@ fun CameraPreviewScreen(
                 isUploading = true
                 guideText = ""
                 uploadError = ""
+                adjustedPhotoFile = null
                 adjustedImageUrl = null
 
                 uploadCapturedImage(
@@ -271,7 +291,7 @@ fun CameraPreviewScreen(
 
                         detectedScene = koreanScene
                         recommendedSettings = settings
-                        guideText = "Scene: $koreanScene\n$responseText"
+                        guideText = responseText
                         adjustedImageUrl = imageUrl
 
                         val category = koreanScene
@@ -279,26 +299,37 @@ fun CameraPreviewScreen(
                         val historyPhotoFile =
                             copyImageToHistoryStorage(context, selectedFile)
 
-                        val newItem = HistoryItem(
-                            category = category,
-                            title = selectedFile.name,
-                            date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date()),
-                            time = SimpleDateFormat("HH:mm", Locale.KOREA).format(Date()),
-                            originalPhotoFile = historyPhotoFile,
-                            adjustedImageUrl = imageUrl,
-                            guideText = responseText,
-                            settings = settings,
-                            adjustmentInfo = AdjustmentInfo(
-                                exposureBefore = 0,
-                                exposureAfter = 0,
-                                isoBefore = 100,
-                                isoAfter = settings.iso,
-                                wbBefore = "AUTO",
-                                wbAfter = settings.whiteBalance
-                            )
-                        )
+                        capturedPhotoFile = historyPhotoFile
 
-                        onSaveHistory(newItem)
+                        downloadImageToHistoryStorage(context, imageUrl) { savedAdjustedFile ->
+                            adjustedPhotoFile = savedAdjustedFile
+                            val createdDate = Date()
+
+                            val newItem = HistoryItem(
+                                id = UUID.randomUUID().toString(),
+                                createdAt = createdDate.time,
+                                category = category,
+                                title = selectedFile.name,
+                                date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(createdDate),
+                                time = SimpleDateFormat("HH:mm", Locale.KOREA).format(createdDate),
+                                originalPhotoFile = historyPhotoFile,
+                                adjustedPhotoFile = savedAdjustedFile,
+                                adjustedImageUrl = imageUrl,
+                                guideText = responseText,
+                                settings = settings,
+                                adjustmentInfo = AdjustmentInfo(
+                                    exposureBefore = 0,
+                                    exposureAfter = 0,
+                                    isoBefore = 100,
+                                    isoAfter = settings.iso,
+                                    wbBefore = "AUTO",
+                                    wbAfter = settings.whiteBalance
+                                )
+                            )
+
+                            onSaveHistory(newItem)
+                            selectedFile.delete()
+                        }
                     },
                     onError = { errorMessage ->
                         isUploading = false
@@ -476,6 +507,11 @@ fun CameraPreviewScreen(
                 exposureRange = range.lower..range.upper
                 exposureIndex = state.exposureCompensationIndex.toFloat()
 
+                boundCamera.cameraInfo.zoomState.value?.let { zoomState ->
+                    zoomRatio = zoomState.zoomRatio
+                    zoomRange = zoomState.minZoomRatio..zoomState.maxZoomRatio
+                }
+
                 resultText = "카메라 준비 완료"
             } catch (e: Exception) {
                 resultText = "카메라 바인딩 실패: ${e.message}"
@@ -490,6 +526,7 @@ fun CameraPreviewScreen(
             guideText = guideText,
             uploadError = uploadError,
             originalPhotoFile = capturedPhotoFile,
+            adjustedPhotoFile = adjustedPhotoFile,
             adjustedImageUrl = adjustedImageUrl,
             scene = detectedScene,
             settings = recommendedSettings,
@@ -498,6 +535,7 @@ fun CameraPreviewScreen(
                 isUploading = false
                 guideText = ""
                 uploadError = ""
+                adjustedPhotoFile = null
                 adjustedImageUrl = null
                 detectedScene = "감지 중"
             }
@@ -511,44 +549,45 @@ fun CameraPreviewScreen(
             .background(Color.Black)
     ) {
         AndroidView(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.84f),
+            modifier = Modifier.fillMaxSize(),
             factory = { previewView }
         )
 
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.84f)
+                .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.15f))
         )
 
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 48.dp)
+                .statusBarsPadding()
                 .fillMaxWidth()
-                .padding(horizontal = 28.dp),
+                .padding(horizontal = 14.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CameraCircleButton(
-                text = "←",
-                onClick = {
-                    onBack()
-                }
-            )
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "뒤로가기",
+                    tint = Color.White
+                )
+            }
 
             SceneDetectPill(
-                scene = "$detectedScene 감지",
+                scene = detectedScene,
                 accuracy = detectedConfidence
             )
 
-            CameraCircleButton(
-                text = "⚙",
-                onClick = {}
-            )
+            IconButton(onClick = { /* 설정 화면 연결 예정 */ }) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "카메라 설정",
+                    tint = Color.White
+                )
+            }
         }
 
         if (isDark) {
@@ -558,7 +597,8 @@ fun CameraPreviewScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 100.dp)
+                    .statusBarsPadding()
+                    .padding(top = 54.dp)
             )
         }
 
@@ -567,8 +607,9 @@ fun CameraPreviewScreen(
         AiGuideCard(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .padding(horizontal = 18.dp)
-                .padding(bottom = 220.dp),
+                .padding(bottom = if (selectedSetting == null) 172.dp else 238.dp),
             guide = getAiGuideByScene(detectedScene)
         )
 
@@ -579,8 +620,9 @@ fun CameraPreviewScreen(
                 WhiteBalanceInlineBar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 28.dp)
-                        .padding(bottom = 140.dp),
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp)
+                        .padding(bottom = 158.dp),
 
                     selectedMode = wbMode,
 
@@ -600,8 +642,9 @@ fun CameraPreviewScreen(
                 ExposureInlineBar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 28.dp)
-                        .padding(bottom = 140.dp),
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp)
+                        .padding(bottom = 158.dp),
 
                     exposureIndex = exposureIndex,
                     exposureRange = exposureRange,
@@ -617,34 +660,56 @@ fun CameraPreviewScreen(
                 )
             }
 
-            else -> {
-
-                CameraSettingBar(
+            "ZOOM" -> {
+                ZoomInlineBar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 28.dp)
-                        .padding(bottom = 140.dp),
-
-                    wb = wbMode.label,
-                    ev = exposureIndex.toInt().toString(),
-
-                    onWbClick = {
-                        selectedSetting = "WB"
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp)
+                        .padding(bottom = 158.dp),
+                    zoomRatio = zoomRatio,
+                    zoomRange = zoomRange,
+                    onZoomChange = { newRatio ->
+                        zoomRatio = newRatio
+                        camera?.cameraControl?.setZoomRatio(newRatio)
                     },
-
-                    onEvClick = {
-                        selectedSetting = "EV"
-                    }
+                    onClose = { selectedSetting = null }
                 )
             }
         }
+
+        CameraSettingBar(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 102.dp),
+
+            wb = wbMode.label,
+            ev = exposureIndex.toInt().toString(),
+            zoom = String.format("%.1fx", zoomRatio),
+            selectedSetting = selectedSetting,
+
+            onWbClick = {
+                selectedSetting = if (selectedSetting == "WB") null else "WB"
+            },
+            onEvClick = {
+                selectedSetting = if (selectedSetting == "EV") null else "EV"
+            },
+            onZoomClick = {
+                selectedSetting = if (selectedSetting == "ZOOM") null else "ZOOM"
+            }
+        )
 
 
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 44.dp)
-                .size(82.dp)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp)
+                .size(72.dp)
+                .clip(CircleShape)
+                .border(3.dp, Color.White.copy(alpha = 0.8f), CircleShape)
+                .padding(5.dp)
                 .clip(CircleShape)
                 .background(Color.White)
                 .clickable {
@@ -683,6 +748,7 @@ fun CameraPreviewScreen(
                                 isUploading = true
                                 guideText = ""
                                 uploadError = ""
+                                adjustedPhotoFile = null
                                 adjustedImageUrl = null
 
                                 uploadCapturedImage(
@@ -699,41 +765,48 @@ fun CameraPreviewScreen(
 
                                         detectedScene = koreanScene
                                         recommendedSettings = settings
-                                        guideText = "Scene: $koreanScene\n$responseText"
+                                        guideText = responseText
                                         adjustedImageUrl = imageUrl
 
                                         val category = koreanScene
+                                        val historyPhotoFile =
+                                            copyImageToHistoryStorage(context, photoFile)
 
-                                        val newItem = HistoryItem(
-                                            category = category,
-                                            title = photoFile.name,
-                                            date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date()),
-                                            time = SimpleDateFormat("HH:mm", Locale.KOREA).format(Date()),
-                                            originalPhotoFile = photoFile,
-                                            adjustedImageUrl = imageUrl,
-                                            guideText = responseText,
-                                            settings = settings,
-                                            adjustmentInfo = AdjustmentInfo(
-                                                exposureBefore = 0,
-                                                exposureAfter = 0,
-                                                isoBefore = 100,
-                                                isoAfter = settings.iso,
-                                                wbBefore = "AUTO",
-                                                wbAfter = settings.whiteBalance
+                                        capturedPhotoFile = historyPhotoFile
+
+                                        downloadImageToHistoryStorage(
+                                            context,
+                                            imageUrl
+                                        ) { savedAdjustedFile ->
+                                            adjustedPhotoFile = savedAdjustedFile
+                                            val createdDate = Date()
+
+                                            val newItem = HistoryItem(
+                                                id = UUID.randomUUID().toString(),
+                                                createdAt = createdDate.time,
+                                                category = category,
+                                                title = photoFile.name,
+                                                date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(createdDate),
+                                                time = SimpleDateFormat("HH:mm", Locale.KOREA).format(createdDate),
+                                                originalPhotoFile = historyPhotoFile,
+                                                adjustedPhotoFile = savedAdjustedFile,
+                                                adjustedImageUrl = imageUrl,
+                                                guideText = responseText,
+                                                settings = settings,
+                                                adjustmentInfo = AdjustmentInfo(
+                                                    exposureBefore = 0,
+                                                    exposureAfter = 0,
+                                                    isoBefore = 100,
+                                                    isoAfter = settings.iso,
+                                                    wbBefore = "AUTO",
+                                                    wbAfter = settings.whiteBalance
+                                                )
                                             )
-                                        )
 
-                                        onSaveHistory(newItem)
-
-                                        if (!imageUrl.isNullOrBlank()) {
-                                            saveImageFromUrlToGallery(context, imageUrl) { savedAdjusted ->
-                                                if (savedAdjusted) {
-                                                    android.util.Log.d("GALLERY", "보정 이미지 저장 완료")
-                                                } else {
-                                                    android.util.Log.e("GALLERY", "보정 이미지 저장 실패")
-                                                }
-                                            }
+                                            onSaveHistory(newItem)
                                         }
+                                        photoFile.delete()
+
                                     },
                                     onError = { errorMessage ->
                                         isUploading = false
@@ -755,9 +828,10 @@ fun CameraPreviewScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 32.dp, bottom = 58.dp)
-                .size(54.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .navigationBarsPadding()
+                .padding(start = 28.dp, bottom = 24.dp)
+                .size(52.dp)
+                .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xFF1F2937))
                 .clickable {
                     galleryLauncher.launch("image/*")
@@ -779,23 +853,34 @@ fun CameraPreviewScreen(
             }
         }
 
-        CameraCircleButton(
-            text = "⚡",
-            isSelected = isFlashOn,
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 32.dp, bottom = 58.dp),
-            onClick = {
-                isFlashOn = !isFlashOn
-
-                imageCapture.flashMode =
-                    if (isFlashOn) {
+                .navigationBarsPadding()
+                .padding(end = 28.dp, bottom = 24.dp)
+                .size(52.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    if (isFlashOn) Color(0xFFFFD166)
+                    else Color(0xFF1F2937)
+                )
+                .clickable {
+                    isFlashOn = !isFlashOn
+                    imageCapture.flashMode = if (isFlashOn) {
                         ImageCapture.FLASH_MODE_ON
                     } else {
                         ImageCapture.FLASH_MODE_OFF
                     }
-            }
-        )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                contentDescription = if (isFlashOn) "플래시 켜짐" else "플래시 꺼짐",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
         // 화면 전환 버튼
 //        CameraCircleButton(
 //            text = "↔",

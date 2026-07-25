@@ -1,7 +1,6 @@
 package com.example.aicameraassistant
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,8 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
 import com.example.aicameraassistant.data.local.loadHistoryItems
+import com.example.aicameraassistant.data.local.deleteHistoryItemFiles
 import com.example.aicameraassistant.data.local.saveHistoryItems
 import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.RecommendedSettings
@@ -24,21 +23,11 @@ class MainActivity : ComponentActivity() {
 
     // 카메라 권한 허용 여부 상태 저장
     private var permissionGrantedState by mutableStateOf(false)
-    private var locationPermissionGrantedState by mutableStateOf(false)
-    private var locationPermissionRequested by mutableStateOf(false)
 
     // 카메라 권한 요청 launcher
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             permissionGrantedState = isGranted
-        }
-
-    private val requestLocationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            locationPermissionRequested = true
-            locationPermissionGrantedState =
-                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         }
 
     private var currentScreen by mutableStateOf(AppScreen.MENU)
@@ -47,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private var isUploading by mutableStateOf(false)
     private var guideText by mutableStateOf("")
     private var uploadError by mutableStateOf("")
+    private var adjustedPhotoFile by mutableStateOf<File?>(null)
     private var adjustedImageUrl by mutableStateOf<String?>(null)
 
     private var historyItems by mutableStateOf(listOf<HistoryItem>())
@@ -63,7 +53,6 @@ class MainActivity : ComponentActivity() {
 
         // 앱 시작 시 현재 카메라 권한 확인
         permissionGrantedState = hasCameraPermission(this)
-        locationPermissionGrantedState = hasLocationPermission()
 
         historyItems = loadHistoryItems(this)
 
@@ -81,14 +70,16 @@ class MainActivity : ComponentActivity() {
                         isUploading = true
                         guideText = ""
                         uploadError = ""
+                        adjustedPhotoFile = null
                         adjustedImageUrl = null
                 },
                 onSuccess = { responseText, imageUrl, scene, settings, newItem ->
                     isUploading = false
                     capturedPhotoFile = newItem.originalPhotoFile
+                    adjustedPhotoFile = newItem.adjustedPhotoFile
                     detectedScene = scene
                     recommendedSettings = settings
-                    guideText = "Scene: $scene\n$responseText"
+                    guideText = responseText
                     adjustedImageUrl = imageUrl
 
                     historyItems = listOf(newItem) + historyItems
@@ -109,28 +100,18 @@ class MainActivity : ComponentActivity() {
 
             AppNavigation(
                 permissionGranted = permissionGrantedState,
-                locationPermissionGranted = locationPermissionGrantedState,
-                shouldRequestLocationPermission = !locationPermissionRequested,
                 currentScreen = currentScreen,
                 historyItems = historyItems,
                 isUploading = isUploading,
                 guideText = guideText,
                 uploadError = uploadError,
                 capturedPhotoFile = capturedPhotoFile,
+                adjustedPhotoFile = adjustedPhotoFile,
                 adjustedImageUrl = adjustedImageUrl,
                 detectedScene = detectedScene,
                 recommendedSettings = recommendedSettings,
                 onRequestPermission = {
                     requestPermissionLauncher.launch(Manifest.permission.CAMERA)
-                },
-                onRequestLocationPermission = {
-                    locationPermissionRequested = true
-                    requestLocationPermissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
-                    )
                 },
                 onCameraClick = {
                     currentScreen = AppScreen.CAMERA
@@ -145,11 +126,17 @@ class MainActivity : ComponentActivity() {
                     historyItems = listOf(newItem) + historyItems
                     saveHistoryItems(this, historyItems)
                 },
+                onDeleteHistoryItem = { item ->
+                    deleteHistoryItemFiles(this, item)
+                    historyItems = historyItems.filterNot { it.id == item.id }
+                    saveHistoryItems(this, historyItems)
+                },
                 onBackFromResult = {
                     currentScreen = AppScreen.MENU
                     isUploading = false
                     guideText = ""
                     uploadError = ""
+                    adjustedPhotoFile = null
                     adjustedImageUrl = null
                     detectedScene = null
                 }
@@ -160,17 +147,5 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         permissionGrantedState = hasCameraPermission(this)
-        locationPermissionGrantedState = hasLocationPermission()
-    }
-
-    private fun hasLocationPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
     }
 }

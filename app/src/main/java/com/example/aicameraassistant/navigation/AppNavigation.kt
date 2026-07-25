@@ -1,5 +1,6 @@
 package com.example.aicameraassistant.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.RecommendedSettings
@@ -12,26 +13,33 @@ import java.io.File
 @Composable
 internal fun AppNavigation(
     permissionGranted: Boolean,
-    locationPermissionGranted: Boolean,
-    shouldRequestLocationPermission: Boolean,
     currentScreen: AppScreen,
     historyItems: List<HistoryItem>,
     isUploading: Boolean,
     guideText: String,
     uploadError: String,
     capturedPhotoFile: File?,
+    adjustedPhotoFile: File?,
     adjustedImageUrl: String?,
     detectedScene: String?,
     recommendedSettings: RecommendedSettings,
     onRequestPermission: () -> Unit,
-    onRequestLocationPermission: () -> Unit,
     onCameraClick: () -> Unit,
     onGalleryClick: () -> Unit,
     onBackFromCamera: () -> Unit,
     onSaveHistory: (HistoryItem) -> Unit,
+    onDeleteHistoryItem: (HistoryItem) -> Unit,
     onBackFromResult: () -> Unit
 ) {
     if (permissionGranted) {
+
+        BackHandler(enabled = currentScreen != AppScreen.MENU) {
+            when (currentScreen) {
+                AppScreen.CAMERA -> onBackFromCamera()
+                AppScreen.RESULT -> onBackFromResult()
+                AppScreen.MENU -> Unit
+            }
+        }
 
         when (currentScreen) {
 
@@ -39,9 +47,7 @@ internal fun AppNavigation(
                 onCameraClick = onCameraClick,
                 onGalleryClick = onGalleryClick,
                 historyItems = historyItems,
-                locationPermissionGranted = locationPermissionGranted,
-                shouldRequestLocationPermission = shouldRequestLocationPermission,
-                onRequestLocationPermission = onRequestLocationPermission
+                onDeleteHistoryItem = onDeleteHistoryItem
             )
 
             AppScreen.CAMERA -> CameraPreviewScreen(
@@ -55,6 +61,7 @@ internal fun AppNavigation(
                     guideText = guideText,
                     uploadError = uploadError,
                     originalPhotoFile = capturedPhotoFile,
+                    adjustedPhotoFile = adjustedPhotoFile,
                     adjustedImageUrl = adjustedImageUrl,
                     scene = detectedScene,
                     settings = recommendedSettings,

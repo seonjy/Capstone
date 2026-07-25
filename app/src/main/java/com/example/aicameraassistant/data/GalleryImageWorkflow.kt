@@ -3,6 +3,7 @@ package com.example.aicameraassistant.data
 import android.content.Context
 import android.net.Uri
 import com.example.aicameraassistant.data.local.copyImageToHistoryStorage
+import com.example.aicameraassistant.data.local.downloadImageToHistoryStorage
 import com.example.aicameraassistant.data.local.uriToFile
 import com.example.aicameraassistant.data.model.AdjustmentInfo
 import com.example.aicameraassistant.data.model.HistoryItem
@@ -13,6 +14,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 internal fun processGalleryImage(
     context: Context,
@@ -35,27 +37,33 @@ internal fun processGalleryImage(
                 val historyPhotoFile =
                     copyImageToHistoryStorage(context, selectedFile)
 
-                val newItem = HistoryItem(
-                    category = category,
-                    title = selectedFile.name,
-                    date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date()),
-                    time = SimpleDateFormat("HH:mm", Locale.KOREA).format(Date()),
-                    originalPhotoFile = historyPhotoFile,
-                    adjustedImageUrl = imageUrl,
-                    guideText = responseText,
-                    settings = settings,
-                    adjustmentInfo = AdjustmentInfo(
-                        exposureBefore = 0,
-                        exposureAfter = 0,
-                        isoBefore = 100,
-                        isoAfter = settings.iso,
-                        wbBefore = "AUTO",
-                        wbAfter = settings.whiteBalance
+                downloadImageToHistoryStorage(context, imageUrl) { adjustedPhotoFile ->
+                    val createdDate = Date()
+                    val newItem = HistoryItem(
+                        id = UUID.randomUUID().toString(),
+                        createdAt = createdDate.time,
+                        category = category,
+                        title = selectedFile.name,
+                        date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(createdDate),
+                        time = SimpleDateFormat("HH:mm", Locale.KOREA).format(createdDate),
+                        originalPhotoFile = historyPhotoFile,
+                        adjustedPhotoFile = adjustedPhotoFile,
+                        adjustedImageUrl = imageUrl,
+                        guideText = responseText,
+                        settings = settings,
+                        adjustmentInfo = AdjustmentInfo(
+                            exposureBefore = 0,
+                            exposureAfter = 0,
+                            isoBefore = 100,
+                            isoAfter = settings.iso,
+                            wbBefore = "AUTO",
+                            wbAfter = settings.whiteBalance
+                        )
                     )
-                )
 
-                onSuccess(responseText, imageUrl, scene, settings, newItem)
-                selectedFile.delete()
+                    onSuccess(responseText, imageUrl, scene, settings, newItem)
+                    selectedFile.delete()
+                }
             },
             onError = onError
         )
