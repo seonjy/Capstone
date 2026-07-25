@@ -1,6 +1,7 @@
 package com.example.aicameraassistant
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import com.example.aicameraassistant.data.local.loadHistoryItems
 import com.example.aicameraassistant.data.local.saveHistoryItems
 import com.example.aicameraassistant.data.model.HistoryItem
@@ -22,11 +24,21 @@ class MainActivity : ComponentActivity() {
 
     // 카메라 권한 허용 여부 상태 저장
     private var permissionGrantedState by mutableStateOf(false)
+    private var locationPermissionGrantedState by mutableStateOf(false)
+    private var locationPermissionRequested by mutableStateOf(false)
 
     // 카메라 권한 요청 launcher
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             permissionGrantedState = isGranted
+        }
+
+    private val requestLocationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            locationPermissionRequested = true
+            locationPermissionGrantedState =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         }
 
     private var currentScreen by mutableStateOf(AppScreen.MENU)
@@ -51,6 +63,7 @@ class MainActivity : ComponentActivity() {
 
         // 앱 시작 시 현재 카메라 권한 확인
         permissionGrantedState = hasCameraPermission(this)
+        locationPermissionGrantedState = hasLocationPermission()
 
         historyItems = loadHistoryItems(this)
 
@@ -96,6 +109,8 @@ class MainActivity : ComponentActivity() {
 
             AppNavigation(
                 permissionGranted = permissionGrantedState,
+                locationPermissionGranted = locationPermissionGrantedState,
+                shouldRequestLocationPermission = !locationPermissionRequested,
                 currentScreen = currentScreen,
                 historyItems = historyItems,
                 isUploading = isUploading,
@@ -107,6 +122,15 @@ class MainActivity : ComponentActivity() {
                 recommendedSettings = recommendedSettings,
                 onRequestPermission = {
                     requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                },
+                onRequestLocationPermission = {
+                    locationPermissionRequested = true
+                    requestLocationPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
                 },
                 onCameraClick = {
                     currentScreen = AppScreen.CAMERA
@@ -131,5 +155,22 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        permissionGrantedState = hasCameraPermission(this)
+        locationPermissionGrantedState = hasLocationPermission()
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
     }
 }
