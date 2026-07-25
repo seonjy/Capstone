@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.aicameraassistant.data.local.loadHistoryItems
+import com.example.aicameraassistant.data.local.deleteHistoryItemFiles
 import com.example.aicameraassistant.data.local.saveHistoryItems
 import com.example.aicameraassistant.data.model.HistoryItem
 import com.example.aicameraassistant.data.model.RecommendedSettings
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private var isUploading by mutableStateOf(false)
     private var guideText by mutableStateOf("")
     private var uploadError by mutableStateOf("")
+    private var adjustedPhotoFile by mutableStateOf<File?>(null)
     private var adjustedImageUrl by mutableStateOf<String?>(null)
 
     private var historyItems by mutableStateOf(listOf<HistoryItem>())
@@ -68,14 +70,16 @@ class MainActivity : ComponentActivity() {
                         isUploading = true
                         guideText = ""
                         uploadError = ""
+                        adjustedPhotoFile = null
                         adjustedImageUrl = null
                 },
                 onSuccess = { responseText, imageUrl, scene, settings, newItem ->
                     isUploading = false
                     capturedPhotoFile = newItem.originalPhotoFile
+                    adjustedPhotoFile = newItem.adjustedPhotoFile
                     detectedScene = scene
                     recommendedSettings = settings
-                    guideText = "Scene: $scene\n$responseText"
+                    guideText = responseText
                     adjustedImageUrl = imageUrl
 
                     historyItems = listOf(newItem) + historyItems
@@ -102,6 +106,7 @@ class MainActivity : ComponentActivity() {
                 guideText = guideText,
                 uploadError = uploadError,
                 capturedPhotoFile = capturedPhotoFile,
+                adjustedPhotoFile = adjustedPhotoFile,
                 adjustedImageUrl = adjustedImageUrl,
                 detectedScene = detectedScene,
                 recommendedSettings = recommendedSettings,
@@ -121,11 +126,17 @@ class MainActivity : ComponentActivity() {
                     historyItems = listOf(newItem) + historyItems
                     saveHistoryItems(this, historyItems)
                 },
+                onDeleteHistoryItem = { item ->
+                    deleteHistoryItemFiles(this, item)
+                    historyItems = historyItems.filterNot { it.id == item.id }
+                    saveHistoryItems(this, historyItems)
+                },
                 onBackFromResult = {
                     currentScreen = AppScreen.MENU
                     isUploading = false
                     guideText = ""
                     uploadError = ""
+                    adjustedPhotoFile = null
                     adjustedImageUrl = null
                     detectedScene = null
                 }

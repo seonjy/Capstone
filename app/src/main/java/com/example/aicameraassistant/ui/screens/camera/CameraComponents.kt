@@ -11,6 +11,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,6 +25,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 @Composable
 fun CameraCircleButton(
@@ -67,7 +73,7 @@ fun CameraLogoPill() {
         Spacer(modifier = Modifier.width(8.dp))
 
         Text(
-            text = "Klick",
+            text = "CHALKAK",
             color = Color.White,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold
@@ -85,31 +91,25 @@ fun SceneDetectPill(
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
             .background(Color.White.copy(alpha = 0.92f))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "🌺",
-            fontSize = 18.sp
-        )
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Text(
             text = scene,
             color = Color(0xFF1F2937),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-        Text(
-            text = accuracy,
-            color = Color(0xFFE056FD),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
+
+        if (scene != "분석 실패" && accuracy.isNotBlank() && accuracy != "--") {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = accuracy,
+                color = Color(0xFFE056FD),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 
@@ -118,42 +118,59 @@ fun AiGuideCard(
     guide: String,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.94f))
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF9D4EDD)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "✦",
-                color = Color.White,
-                fontSize = 20.sp
-            )
+    var isExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(guide) {
+        if (guide.isNotBlank()) {
+            isExpanded = true
+            delay(3000L)
+            isExpanded = false
         }
+    }
 
-        Spacer(modifier = Modifier.width(12.dp))
+    if (isExpanded) {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White.copy(alpha = 0.94f))
+                .clickable { isExpanded = false }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "✦", color = Color(0xFF6D28D9), fontSize = 19.sp)
+            Spacer(modifier = Modifier.width(10.dp))
 
-        Column {
+            Column {
+                Text(
+                    text = "AI 촬영 팁",
+                    color = Color(0xFF6D28D9),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = guide,
+                    color = Color(0xFF1F2937),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    } else {
+        Row(
+            modifier = modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White.copy(alpha = 0.92f))
+                .clickable { isExpanded = true }
+                .padding(horizontal = 13.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "✦", color = Color(0xFF6D28D9), fontSize = 15.sp)
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "KLICK AI · 구도",
-                color = Color(0xFF6D28D9),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                text = guide,
+                text = "AI 촬영 팁",
                 color = Color(0xFF1F2937),
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -167,27 +184,28 @@ fun CameraSettingBar(
 //    aperture: String,
     wb: String,
     ev: String,
+    zoom: String,
+    selectedSetting: String?,
     modifier: Modifier = Modifier,
 //    onIsoClick: () -> Unit,
 //    onShutterClick: () -> Unit,
 //    onApertureClick: () -> Unit,
     onWbClick: () -> Unit,
-    onEvClick: () -> Unit
+    onEvClick: () -> Unit,
+    onZoomClick: () -> Unit
 ) {
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF263238).copy(alpha = 0.88f))
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+            .wrapContentWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
 //        CameraSettingItem("ISO", iso, onIsoClick)
 //        CameraSettingItem("SS", shutter, onShutterClick)
 //        CameraSettingItem("F", aperture, onApertureClick)
-        CameraSettingItem("WB", wb, onWbClick)
-        CameraSettingItem("EV", ev, onEvClick)
+        CameraSettingItem("WB", wb, selectedSetting == "WB", onWbClick)
+        CameraSettingItem("EV", ev, selectedSetting == "EV", onEvClick)
+        CameraSettingItem("ZOOM", zoom, selectedSetting == "ZOOM", onZoomClick)
     }
 }
 
@@ -195,13 +213,18 @@ fun CameraSettingBar(
 fun CameraSettingItem(
     label: String,
     value: String,
+    isSelected: Boolean = false,
     onClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                if (isSelected) Color(0xFF6D28D9)
+                else Color(0xFF263238).copy(alpha = 0.82f)
+            )
             .clickable { onClick() }
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .padding(horizontal = 14.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -211,13 +234,56 @@ fun CameraSettingItem(
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         Text(
             text = value,
             color = Color.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+fun ZoomInlineBar(
+    zoomRatio: Float,
+    zoomRange: ClosedFloatingPointRange<Float>,
+    onZoomChange: (Float) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF263238).copy(alpha = 0.88f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "←",
+            color = Color.White,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(onClick = onClose)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = String.format("%.1fx", zoomRatio),
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Slider(
+            value = zoomRatio.coerceIn(zoomRange.start, zoomRange.endInclusive),
+            onValueChange = onZoomChange,
+            valueRange = zoomRange,
+            modifier = Modifier.weight(1f)
         )
     }
 }
@@ -387,14 +453,16 @@ fun GuideOverlay(
         modifier = Modifier.fillMaxSize()
     ) {
 
-        val cameraPreviewHeight = size.height * 0.88f
-        val centerY = cameraPreviewHeight / 2f
+        val centerY = size.height / 2f
+        val lineLength = size.width * 0.36f
+        val startX = (size.width - lineLength) / 2f
+        val endX = startX + lineLength
 
         // 항상 가로 수평선
         drawLine(
             color = lineColor,
-            start = Offset(0f, centerY),
-            end = Offset(size.width, centerY),
+            start = Offset(startX, centerY),
+            end = Offset(endX, centerY),
             strokeWidth = 4f,
             cap = StrokeCap.Round
         )

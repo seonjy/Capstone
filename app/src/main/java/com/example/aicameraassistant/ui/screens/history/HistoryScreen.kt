@@ -1,6 +1,8 @@
 package com.example.aicameraassistant.ui.screens.history
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,10 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import com.example.aicameraassistant.R
 import com.example.aicameraassistant.ui.screens.result.ResultScreen
 import com.example.aicameraassistant.data.model.HistoryItem
 import java.text.SimpleDateFormat
@@ -51,7 +55,9 @@ fun formatHistoryDateLabel(date: String): String {
 
 @Composable
 fun HistoryScreen(
-    historyItems: List<HistoryItem>
+    historyItems: List<HistoryItem>,
+    onDeleteHistoryItem: (HistoryItem) -> Unit,
+    onDetailVisibilityChange: (Boolean) -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf("전체") }
     var selectedItem by remember { mutableStateOf<HistoryItem?>(null) }
@@ -60,14 +66,27 @@ fun HistoryScreen(
 
     val filteredItems = historyItems
         .filter { selectedFilter == "전체" || it.category == selectedFilter }
-        .sortedByDescending { "${it.date} ${it.time}" }
+        .sortedByDescending { it.createdAt }
 
     val groupedItems = filteredItems.groupBy { it.date }
 
     if (selectedItem != null) {
+        BackHandler {
+            selectedItem = null
+            onDetailVisibilityChange(false)
+        }
+
         HistoryDetailScreen(
             item = selectedItem!!,
-            onBack = { selectedItem = null }
+            onDelete = {
+                selectedItem?.let(onDeleteHistoryItem)
+                selectedItem = null
+                onDetailVisibilityChange(false)
+            },
+            onBack = {
+                selectedItem = null
+                onDetailVisibilityChange(false)
+            }
         )
         return
     }
@@ -75,61 +94,38 @@ fun HistoryScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFFF7F8FC))
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "GALLERY",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF7C8798)
-                )
+            Image(
+                painter = painterResource(id = R.drawable.chalkak_logo),
+                contentDescription = "CHALKAK 앱 아이콘",
+                modifier = Modifier.size(24.dp),
+                contentScale = ContentScale.Fit
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.width(7.dp))
 
-                Text(
-                    text = "장면별 히스토리",
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Light,
-                    color = Color(0xFF1F2937)
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White)
-                    .border(
-                        width = 1.dp,
-                        color = Color(0xFFE5E7EB),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .clickable {
-                        // TODO: 기능 나중에 추가
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "#",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1F2937)
-                )
-            }
+            Text(
+                text = "CHALKAK",
+                color = Color(0xFF1C1E53),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFFEEF0F6))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             filters.forEach { filter ->
                 HistoryFilterChip(
@@ -137,19 +133,40 @@ fun HistoryScreen(
                     selected = selectedFilter == filter,
                     count = if (filter == "전체") historyItems.size else null,
                     onClick = { selectedFilter = filter },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(if (filter == "전체") 1.35f else 1f)
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(28.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            groupedItems.forEach { (date, itemsForDate) ->
-                item {
+        if (filteredItems.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (selectedFilter == "전체") {
+                        "아직 촬영 기록이 없어요\n사진을 분석하면 이곳에 기록이 쌓여요"
+                    } else {
+                        "아직 $selectedFilter 촬영 기록이 없어요"
+                    },
+                    color = Color(0xFF6B7280),
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp
+                )
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(28.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(
+                    items = groupedItems.entries.toList(),
+                    key = { it.key }
+                ) { (date, itemsForDate) ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -157,7 +174,7 @@ fun HistoryScreen(
                     ) {
                         Text(
                             text = formatHistoryDateLabel(date),
-                            fontSize = 18.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1F2937)
                         )
@@ -172,19 +189,31 @@ fun HistoryScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.height(
-                            (((itemsForDate.size + 2) / 3) * 118).dp
-                        )
-                    ) {
-                        items(itemsForDate) { item ->
-                            HistoryPhotoCard(
-                                item = item,
-                                onClick = { selectedItem = item }
-                            )
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        itemsForDate.chunked(3).forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                rowItems.forEach { item ->
+                                    HistoryPhotoCard(
+                                        item = item,
+                                        onClick = {
+                                            selectedItem = item
+                                            onDetailVisibilityChange(true)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                repeat(3 - rowItems.size) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -201,52 +230,29 @@ fun HistoryFilterChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val categoryColor = when (text) {
-        "음식" -> Color(0xFFE91E63)
-        "풍경" -> Color(0xFF2ECC71)
-        "야경" -> Color(0xFF6C5CE7)
-        "명암" -> Color(0xFF0F172A)
-        "인물" -> Color(0xFFE056FD)
-        else -> Color.White
-    }
-
-    Row(
+    Column(
         modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                if (selected) Color(0xFF0B2341)
-                else Color.White
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected)
-                    Color(0xFF0B2341)
-                else
-                    Color(0xFFE5E7EB),
-                shape = RoundedCornerShape(24.dp)
-            )
-            .clickable { onClick() }
-            .padding(horizontal = 4.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (text != "전체") {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(categoryColor)
+        Box(
+            modifier = Modifier.height(38.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (count != null) "$text $count" else text,
+                color = if (selected) Color(0xFF1F2937) else Color(0xFF6B7280),
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1
             )
-
-            Spacer(modifier = Modifier.width(4.dp))
         }
 
-        Text(
-            text = if (count != null) "$text $count" else text,
-            color = if (selected) Color.White else Color(0xFF4B5563),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.62f)
+                .height(2.dp)
+                .background(if (selected) Color(0xFF1C1E53) else Color.Transparent)
         )
     }
 }
@@ -254,52 +260,46 @@ fun HistoryFilterChip(
 @Composable
 fun HistoryPhotoCard(
     item: HistoryItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFFE5E7EB))
             .clickable { onClick() }
     ) {
-        if (item.originalPhotoFile != null) {
-            AsyncImage(
-                model = item.originalPhotoFile,
+        val originalFile = item.originalPhotoFile
+
+        if (originalFile != null && originalFile.exists()) {
+            SubcomposeAsyncImage(
+                model = originalFile,
                 contentDescription = item.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                loading = { HistoryImageFallback("불러오는 중") },
+                error = { HistoryImageFallback("이미지 없음") }
             )
+        } else {
+            HistoryImageFallback("이미지 없음")
         }
 
-        Text(
-            text = item.category,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1F2937),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(7.dp)
-                .background(
-                    Color.White.copy(alpha = 0.85f),
-                    RoundedCornerShape(4.dp)
-                )
-                .padding(horizontal = 6.dp, vertical = 3.dp)
-        )
+    }
+}
 
+@Composable
+private fun HistoryImageFallback(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFE5E7EB)),
+        contentAlignment = Alignment.Center
+    ) {
         Text(
-            text = item.time,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(7.dp)
-                .background(
-                    Color.Black.copy(alpha = 0.45f),
-                    RoundedCornerShape(4.dp)
-                )
-                .padding(horizontal = 6.dp, vertical = 3.dp)
+            text = text,
+            color = Color(0xFF6B7280),
+            fontSize = 11.sp
         )
     }
 }
@@ -377,13 +377,14 @@ fun HistoryListScreen(
                                         }
                                 ) {
                                     if (historyItem.originalPhotoFile != null) {
-                                        AsyncImage(
+                                        SubcomposeAsyncImage(
                                             model = historyItem.originalPhotoFile,
                                             contentDescription = historyItem.title,
                                             modifier = Modifier
                                                 .size(120.dp)
                                                 .background(Color(0xFFEAF6FD)),
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Crop,
+                                            error = { HistoryImageFallback("이미지 없음") }
                                         )
                                     } else {
                                         Box(
@@ -421,6 +422,7 @@ fun HistoryListScreen(
 @Composable
 fun HistoryDetailScreen(
     item: HistoryItem,
+    onDelete: () -> Unit,
     onBack: () -> Unit
 ) {
     ResultScreen(
@@ -428,9 +430,12 @@ fun HistoryDetailScreen(
         guideText = item.guideText,
         uploadError = "",
         originalPhotoFile = item.originalPhotoFile,
+        adjustedPhotoFile = item.adjustedPhotoFile,
         adjustedImageUrl = item.adjustedImageUrl,
         scene = item.category,
         settings = item.settings,
+        isHistoryDetail = true,
+        onDelete = onDelete,
         onBackToCamera = onBack
     )
 }

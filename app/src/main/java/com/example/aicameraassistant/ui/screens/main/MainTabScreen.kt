@@ -1,5 +1,6 @@
 package com.example.aicameraassistant.ui.screens.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -7,7 +8,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,7 +33,6 @@ sealed class BottomTab(
 ) {
     object Home : BottomTab("홈", Icons.Default.Home)
     object Camera : BottomTab("카메라", Icons.Default.PhotoCamera)
-    object Gallery : BottomTab("갤러리", Icons.Default.PhotoLibrary)
     object History : BottomTab("히스토리", Icons.Default.CalendarMonth)
 }
 
@@ -41,7 +40,8 @@ sealed class BottomTab(
 fun MainTabScreen(
     onCameraClick: () -> Unit,
     onGalleryClick: () -> Unit,
-    historyItems: List<HistoryItem>
+    historyItems: List<HistoryItem>,
+    onDeleteHistoryItem: (HistoryItem) -> Unit
 ) {
     var selectedTab by remember {
         mutableStateOf<BottomTab>(BottomTab.Home)
@@ -49,36 +49,50 @@ fun MainTabScreen(
     var selectedHomeHistoryItem by remember {
         mutableStateOf<HistoryItem?>(null)
     }
+    var isHistoryDetailVisible by remember { mutableStateOf(false) }
 
     val tabs = listOf(
         BottomTab.Home,
         BottomTab.Camera,
-        BottomTab.Gallery,
         BottomTab.History
     )
+
+    val returnToHistory = {
+        selectedHomeHistoryItem = null
+        selectedTab = BottomTab.History
+    }
+
+    BackHandler(
+        enabled = !isHistoryDetailVisible &&
+            (selectedHomeHistoryItem != null || selectedTab != BottomTab.Home)
+    ) {
+        if (selectedHomeHistoryItem != null) {
+            returnToHistory()
+        } else {
+            selectedTab = BottomTab.Home
+        }
+    }
 
     Scaffold(
         containerColor = Color(0xFFFFFFFF),
 
         bottomBar = {
-            NavigationBar(
-                containerColor = Color(0xFFFFFFFF)
-            ) {
-                tabs.forEach { tab ->
+            if (selectedHomeHistoryItem == null && !isHistoryDetailVisible) {
+                NavigationBar(
+                    containerColor = Color(0xFFFFFFFF)
+                ) {
+                    tabs.forEach { tab ->
 
                     NavigationBarItem(
                         selected = selectedTab == tab,
 
                         onClick = {
                             selectedHomeHistoryItem = null
+                            isHistoryDetailVisible = false
 
                             when (tab) {
                                 BottomTab.Camera -> {
                                     onCameraClick()
-                                }
-
-                                BottomTab.Gallery -> {
-                                    onGalleryClick()
                                 }
 
                                 BottomTab.Home,
@@ -100,13 +114,14 @@ fun MainTabScreen(
                         },
 
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF8B5CF6),
-                            selectedTextColor = Color(0xFF8B5CF6),
-                            indicatorColor = Color(0x332A2F45),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray
+                            selectedIconColor = Color(0xFF5B35FF),
+                            selectedTextColor = Color(0xFF5B35FF),
+                            indicatorColor = Color(0xFFEDE9FE),
+                            unselectedIconColor = Color(0xFF6B7280),
+                            unselectedTextColor = Color(0xFF6B7280)
                         )
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -123,7 +138,11 @@ fun MainTabScreen(
             if (homeHistoryItem != null) {
                 HistoryDetailScreen(
                     item = homeHistoryItem,
-                    onBack = { selectedHomeHistoryItem = null }
+                    onDelete = {
+                        onDeleteHistoryItem(homeHistoryItem)
+                        returnToHistory()
+                    },
+                    onBack = returnToHistory
                 )
             } else when (selectedTab) {
 
@@ -131,6 +150,7 @@ fun MainTabScreen(
                     HomeScreen(
                         historyItems = historyItems,
                         onCameraClick = onCameraClick,
+                        onGalleryClick = onGalleryClick,
                         onViewAllClick = {
                             selectedTab = BottomTab.History
                         },
@@ -141,7 +161,13 @@ fun MainTabScreen(
                 }
 
                 BottomTab.History -> {
-                    HistoryScreen(historyItems = historyItems)
+                    HistoryScreen(
+                        historyItems = historyItems,
+                        onDeleteHistoryItem = onDeleteHistoryItem,
+                        onDetailVisibilityChange = { isVisible ->
+                            isHistoryDetailVisible = isVisible
+                        }
+                    )
                 }
 
                 else -> Unit

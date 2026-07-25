@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -187,4 +189,88 @@ internal fun copyImageToHistoryStorage(context: Context, sourceFile: File): File
     sourceFile.copyTo(savedFile, overwrite = true)
 
     return savedFile
+}
+
+internal fun downloadImageToHistoryStorage(
+    context: Context,
+    imageUrl: String?,
+    onResult: (File?) -> Unit
+) {
+    if (imageUrl.isNullOrBlank()) {
+        onResult(null)
+        return
+    }
+
+    Thread {
+        val savedFile = try {
+            val request = Request.Builder()
+                .url(imageUrl)
+                .build()
+            val client = OkHttpClient()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    null
+                } else {
+                    val imageBytes = response.body?.bytes()
+                    if (imageBytes == null || imageBytes.isEmpty()) {
+                        null
+                    } else {
+                        val historyDir = File(context.filesDir, "history_images")
+                        if (!historyDir.exists()) {
+                            historyDir.mkdirs()
+                        }
+
+                        File(
+                            historyDir,
+                            "adjusted_${System.currentTimeMillis()}.jpg"
+                        ).apply {
+                            writeBytes(imageBytes)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
+
+        onResult(savedFile)
+    }.start()
+}
+
+internal fun saveResultImageToGallery(
+    context: Context,
+    adjustedPhotoFile: File?,
+    adjustedImageUrl: String?,
+    originalPhotoFile: File?,
+    onResult: (Boolean) -> Unit
+) {
+    val mainHandler = Handler(Looper.getMainLooper())
+    val validAdjustedPhoto = adjustedPhotoFile?.takeIf { it.exists() && it.isFile }
+    val validOriginalPhoto = originalPhotoFile?.takeIf { it.exists() && it.isFile }
+
+    if (validAdjustedPhoto == null && !adjustedImageUrl.isNullOrBlank()) {
+        saveImageFromUrlToGallery(context, adjustedImageUrl) { saved ->
+            if (saved || validOriginalPhoto == null) {
+                mainHandler.post { onResult(saved) }
+            } else {
+                Thread {
+                    val originalSaved = saveImageToGallery(context, validOriginalPhoto)
+                    mainHandler.post { onResult(originalSaved) }
+                }.start()
+            }
+        }
+        return
+    }
+
+    val localImage = validAdjustedPhoto ?: validOriginalPhoto
+    if (localImage == null) {
+        onResult(false)
+        return
+    }
+
+    Thread {
+        val saved = saveImageToGallery(context, localImage)
+        mainHandler.post { onResult(saved) }
+    }.start()
 }
